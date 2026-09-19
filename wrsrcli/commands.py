@@ -9,8 +9,9 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from . import APP_ID, acf, backup, config, history, importer, importlist
-from . import install, scan, staleness, steam, steamapi, steamcmd, table
+from . import __version__, APP_ID, acf, backup, config, history
+from . import importer, importlist, install, scan, staleness, steam
+from . import steamapi, steamcmd, table
 from .errors import WrsrcliError
 
 # Verbatim per SPEC.md 4.2 — do not reword.
@@ -39,8 +40,11 @@ STEAMCMD_PROMPT = """Press ENTER to automatically download and install steamcmd 
 
 # Verbatim per SPEC.md 3 — do not reword. The title line is shown in rust, and
 # in the prompt only the key name is; everything else is plain (D-016, D-017).
+# Major.minor from `__version__`, so the banner cannot drift out of step with
+# the version the same build reports through `--version`.
 FIRST_RUN_TITLE = (
-    "wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic"
+    f"wrsrcli v{'.'.join(__version__.split('.')[:2])} - "
+    "Workshop Manager for Workers and Resources: Soviet Republic"
 )
 FIRST_RUN_BODY = """\
 ================================================================================

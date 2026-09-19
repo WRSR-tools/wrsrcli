@@ -139,10 +139,11 @@ a terminal, shows the installer screen instead of an argparse usage error.
 Detection of "from Explorer" identifies the launching process, looking
 past our own PyInstaller bootloader generations; see B-001.
 
-Printed verbatim — do not reword:
+Printed verbatim — do not reword. The version in the title is major.minor
+from `__version__`, so it tracks the build rather than being typed out:
 
 ```
-wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic
+wrsrcli v0.1 - Workshop Manager for Workers and Resources: Soviet Republic
 ================================================================================
 This is the installer for the wrsrcli - a command line tool to manage workshop
 assets for Workers and Resources: Soviet Republic.

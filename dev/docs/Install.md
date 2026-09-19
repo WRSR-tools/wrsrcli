@@ -13,7 +13,7 @@ Because it is a command-line tool, it is not much use sitting in your
 Downloads folder, so double-clicking it opens the installer:
 
 ```
-wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic
+wrsrcli v0.1 - Workshop Manager for Workers and Resources: Soviet Republic
 ================================================================================
 This is the installer for the wrsrcli - a command line tool to manage workshop
 assets for Workers and Resources: Soviet Republic.
