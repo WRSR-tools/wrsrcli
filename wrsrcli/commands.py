@@ -6,6 +6,7 @@ import datetime
 import os
 import shutil
 import sys
+import webbrowser
 from pathlib import Path
 
 from . import APP_ID, acf, backup, config, history, importer, importlist
@@ -36,8 +37,8 @@ STEAMCMD_PROMPT = """Press ENTER to automatically download and install steamcmd 
    https://developer.valvesoftware.com/wiki/SteamCMD
 """
 
-# Verbatim per SPEC.md 3 — do not reword. The title line and the prompt are
-# shown in rust; everything between them is plain (decision D-016).
+# Verbatim per SPEC.md 3 — do not reword. The title line is shown in rust, and
+# in the prompt only the key name is; everything else is plain (D-016, D-017).
 FIRST_RUN_TITLE = (
     "wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic"
 )
@@ -49,7 +50,13 @@ assets for Workers and Resources: Soviet Republic.
 For more information on how to use this tool, please visit:
    https://wrsr-tools.github.io
 """
-FIRST_RUN_PROMPT = "   Press ENTER to install..."
+# Split so that only the key name is coloured, per SPEC.md 3.
+FIRST_RUN_PROMPT_BEFORE = "   Press "
+FIRST_RUN_PROMPT_KEY = "ENTER"
+FIRST_RUN_PROMPT_AFTER = " to install..."
+
+# The site `open-web` opens, and the one the first-run screen points at.
+WEBSITE = "https://wrsr-tools.github.io/"
 
 # Rusty red, matching the game's palette and `output-table`'s own accent.
 # Written as a 24-bit colour: Windows Terminal reproduces it exactly, and
@@ -511,9 +518,15 @@ def first_run():
     print(rust(FIRST_RUN_TITLE, colour))
     print(FIRST_RUN_BODY)
 
+    prompt = (
+        FIRST_RUN_PROMPT_BEFORE
+        + rust(FIRST_RUN_PROMPT_KEY, colour)
+        + FIRST_RUN_PROMPT_AFTER
+    )
+
     # Only an empty line proceeds, matching `steamcmd --install` (D-008).
     try:
-        answer = input(rust(FIRST_RUN_PROMPT, colour) + " ").strip()
+        answer = input(prompt + " ").strip()
     except EOFError:
         answer = "cancel"
 
@@ -567,6 +580,19 @@ def cmd_uninstall(args):
         "\nYour settings, manifest and backups in "
         f"{config.config_dir()} were left untouched."
     )
+    return 0
+
+
+def cmd_open_web(args):
+    """Open the wrsrcli website in the user's default browser."""
+    print(f"Opening {WEBSITE}")
+    # `webbrowser` hands the URL to the OS default. It reports False when it
+    # cannot find a browser to hand it to, in which case the printed URL is
+    # the fallback and the user can copy it.
+    if not webbrowser.open(WEBSITE):
+        raise WrsrcliError(
+            f"could not open a browser. Visit {WEBSITE} yourself instead."
+        )
     return 0
 
 

@@ -114,6 +114,11 @@ def build_parser():
     )
     uninstall.set_defaults(func=commands.cmd_uninstall)
 
+    open_web = subcommands.add_parser(
+        "open-web", help="open the wrsrcli website in your browser"
+    )
+    open_web.set_defaults(func=commands.cmd_open_web)
+
     steamcmd = subcommands.add_parser("steamcmd", help="install SteamCMD")
     steamcmd.add_argument(
         "-i", "--install", action="store_true", help="download and install SteamCMD"
@@ -139,6 +144,14 @@ def main(argv=None):
         return commands.first_run()
 
     parser = build_parser()
+
+    # Bare `wrsrcli` shows the help rather than argparse's usage error. Someone
+    # who types the name alone is asking what it does, and a two-line error is
+    # a poor answer to that (decision D-017).
+    if not supplied:
+        parser.print_help()
+        return 0
+
     args = parser.parse_args(argv)
     try:
         return args.func(args)

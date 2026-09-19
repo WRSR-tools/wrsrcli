@@ -137,12 +137,12 @@ _TEMPLATE = """<!DOCTYPE html>
 <style>
   :root {{
     --bg: #f6f6f4; --panel: #ffffff; --ink: #1b1b1a; --muted: #6a6a66;
-    --line: #dcdcd6; --accent: #7a1f1f; --hover: #f0efe9;
+    --line: #dcdcd6; --accent: #b7410e; --hover: #f0efe9;
   }}
   @media (prefers-color-scheme: dark) {{
     :root {{
       --bg: #17171a; --panel: #202024; --ink: #e9e9e4; --muted: #9a9a93;
-      --line: #33333a; --accent: #c96a6a; --hover: #26262c;
+      --line: #33333a; --accent: #d9793f; --hover: #26262c;
     }}
   }}
   * {{ box-sizing: border-box; }}

@@ -94,10 +94,10 @@ so rather than quietly bringing one into line with the other.
 
 - Command-line interface: one subcommand per verb (`scan`, `output-table`,
   `import`, `restore`, `rollback`, `manual-rerun`, `manual-check`, `api`,
-  `path`, `install`, `uninstall`, `steamcmd`), matching the definitions in
-  `SPEC.md`. Adding a verb means updating this list and `SPEC.md` in the
-  same change — `install` and `uninstall` were both implemented before
-  either was recorded (see D-015).
+  `path`, `install`, `uninstall`, `open-web`, `steamcmd`), matching the
+  definitions in `SPEC.md`. Adding a verb means updating this list and
+  `SPEC.md` in the same change — `install` and `uninstall` were both
+  implemented before either was recorded (see D-015).
 - When a spec detail is marked "open" or "deferred" in `SPEC.md`, do not
   invent an answer — implement the narrowest version that satisfies what
   *is* specified, and leave the open item open (flag it, don't guess).

@@ -153,10 +153,11 @@ For more information on how to use this tool, please visit:
    Press ENTER to install...
 ```
 
-- The **title line and the prompt** are rendered in rusty red; the rest is
-  plain. Colour is used only where the console has been confirmed to handle
-  ANSI escapes, and is suppressed when `NO_COLOR` is set or output is not a
-  terminal. See decision D-016.
+- The **title line** is rendered in rusty red, and within the prompt only the
+  word `ENTER`; everything else is left uncoloured. Colour is used only where
+  the console has been confirmed to handle ANSI escapes, and is suppressed
+  when `NO_COLOR` is set or output is not a terminal. See decisions D-016 and
+  D-017.
 - **Only an empty line (ENTER) proceeds**, matching `steamcmd --install`
   (D-008). Any other input cancels and nothing is installed.
 - On ENTER the behaviour is exactly `wrsrcli install`'s: the executable is
@@ -164,6 +165,13 @@ For more information on how to use this tool, please visit:
   PATH, with both reported.
 - The window always waits for a final ENTER before exiting, because Explorer
   closes it the instant the process does.
+
+### `wrsrcli open-web`
+
+Opens the project website, `https://wrsr-tools.github.io/`, in the user's
+default browser. The URL is printed first, so it remains usable when no
+browser can be launched; failure to launch one is reported as an error
+naming the URL. See decision D-017.
 
 ### `wrsrcli uninstall`
 

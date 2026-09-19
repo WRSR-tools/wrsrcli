@@ -24,6 +24,9 @@ For more information on how to use this tool, please visit:
    Press ENTER to install...
 ```
 
+The title line and the word `ENTER` are shown in rusty red where your
+console supports it.
+
 Press ENTER and it installs itself to
 `%LOCALAPPDATA%\Programs\wrsrcli` and adds that folder to your PATH,
 telling you as it does both. Then **open a new terminal window** — PATH

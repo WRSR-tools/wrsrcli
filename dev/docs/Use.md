@@ -1,7 +1,8 @@
 # Using wrsrcli
 
-Every command is `wrsrcli {command}`. Run `wrsrcli --help` for the list, or
-`wrsrcli {command} --help` for one command's options.
+Every command is `wrsrcli {command}`. Run `wrsrcli` on its own, or
+`wrsrcli --help`, for the list; `wrsrcli {command} --help` shows one
+command's options.
 
 This page covers everything except import lists, which have their own
 guide: [Import.md](Import.md).
@@ -110,7 +111,7 @@ for you.
 
 ## Imports
 
-These four commands are covered in full in [Import.md](Import.md).
+These five commands are covered in full in [Import.md](Import.md).
 
 | Command | What it does |
 |---|---|
@@ -151,7 +152,14 @@ and leaves it alone.
 |---|---|
 | `wrsrcli install` | Copy the standalone `.exe` onto your PATH — see [Install.md](Install.md) |
 | `wrsrcli uninstall` | Remove it again, leaving your settings and backups alone |
+| `wrsrcli open-web` | Open the project website in your default browser |
 | `wrsrcli --version` | Print the version |
+
+### `wrsrcli open-web`
+
+Opens <https://wrsr-tools.github.io/> in whichever browser Windows is set to
+use. The URL is printed before the browser opens, so you can copy it if
+nothing comes up.
 
 ## When something goes wrong
 
