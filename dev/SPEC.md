@@ -132,6 +132,26 @@ folder to the **user** PATH, so `wrsrcli` works from any new terminal.
 
 See decision D-014.
 
+### `wrsrcli uninstall`
+
+Reverses `wrsrcli install`. Removes the installed `wrsrcli.exe` and takes
+its folder back off the user PATH.
+
+- `-p "{path}"` / `--path "{path}"` uninstalls from a non-default location,
+  matching the `-p` given to `install`.
+- Windows will not let a running executable delete itself, so when
+  `uninstall` is invoked *via* the installed copy the binary is left in
+  place and the user is told to remove it by hand. The PATH entry is still
+  removed.
+- Removing the PATH entry preserves every other entry exactly as written,
+  including blank segments and unexpanded `%VAR%` values.
+- The install folder is removed only if our binary was its sole occupant.
+- **`%APPDATA%\wrsrcli\` is never touched** — config, manifest and the
+  entire backup store survive an uninstall, so uninstalling can never cost
+  the user a file an import overwrote.
+
+See decision D-015, which supersedes D-014's exclusion of an uninstall path.
+
 ### `wrsrcli steamcmd -i` / `wrsrcli steamcmd --install`
 
 Installs SteamCMD. Default install location: `[STEAMPATH]/steamcmd`. An

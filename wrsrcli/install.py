@@ -10,6 +10,7 @@ touched.
 """
 
 import ctypes
+import ctypes.wintypes as wintypes
 import os
 import shutil
 import sys
@@ -32,20 +33,86 @@ _HWND_BROADCAST = 0xFFFF
 _WM_SETTINGCHANGE = 0x001A
 _SMTO_ABORTIFHUNG = 0x0002
 
+# Process enumeration, for identifying our parent. CreateToolhelp32Snapshot.
+_TH32CS_SNAPPROCESS = 0x00000002
+_INVALID_HANDLE_VALUE = ctypes.c_void_p(-1).value
+_MAX_PATH = 260
+
+# Explorer is the parent when a file is double-clicked, opened from its
+# context menu, or launched from the Run dialog or the Start menu. Every one
+# of those means "no terminal is waiting for this", which is what we are
+# actually asking.
+_EXPLORER = "explorer.exe"
+
+
+class _PROCESSENTRY32W(ctypes.Structure):
+    _fields_ = [
+        ("dwSize", wintypes.DWORD),
+        ("cntUsage", wintypes.DWORD),
+        ("th32ProcessID", wintypes.DWORD),
+        ("th32DefaultHeapID", ctypes.POINTER(ctypes.c_ulong)),
+        ("th32ModuleID", wintypes.DWORD),
+        ("cntThreads", wintypes.DWORD),
+        ("th32ParentProcessID", wintypes.DWORD),
+        ("pcPriClassBase", wintypes.LONG),
+        ("dwFlags", wintypes.DWORD),
+        ("szExeFile", wintypes.WCHAR * _MAX_PATH),
+    ]
+
 
 def is_frozen():
     """True when running as the PyInstaller-built executable."""
     return getattr(sys, "frozen", False)
 
 
-def launched_from_explorer():
-    """True when double-clicked rather than run from an existing terminal.
+def parent_process_name():
+    """The file name of the process that started us, lowercased, or None.
 
-    Explorer gives a console application a console of its own, so we are the
-    only process attached to it. Run from PowerShell or cmd, the shell is
-    attached too and the count is at least two. That difference is the only
-    reliable signal, and it matters because a double-clicked window closes
-    the instant the process exits.
+    One snapshot, walked once, collecting every PID's name so our parent can
+    be named without a second pass. A PID that has already exited may have
+    been recycled, so a wrong answer is possible in principle; it only ever
+    changes whether we offer to install, so it is not worth guarding against.
+    """
+    kernel32 = ctypes.windll.kernel32
+    kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel32.CreateToolhelp32Snapshot.argtypes = [wintypes.DWORD, wintypes.DWORD]
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+
+    snapshot = kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
+    if not snapshot or snapshot == _INVALID_HANDLE_VALUE:
+        return None
+
+    try:
+        entry = _PROCESSENTRY32W()
+        entry.dwSize = ctypes.sizeof(entry)
+        if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
+            return None
+
+        me = os.getpid()
+        parent_id = None
+        names = {}
+        while True:
+            names[entry.th32ProcessID] = entry.szExeFile
+            if entry.th32ProcessID == me:
+                parent_id = entry.th32ParentProcessID
+            if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
+                break
+    finally:
+        kernel32.CloseHandle(snapshot)
+
+    if parent_id is None:
+        return None
+    name = names.get(parent_id)
+    return name.lower() if name else None
+
+
+def console_is_ours_alone():
+    """True when this process is the only one attached to its console.
+
+    The original — and until B-001 the only — double-click test. It holds
+    under the legacy `conhost.exe` console host, where Explorer gives a
+    console application a console of its own while a shell shares the one it
+    already has. Kept as a second opinion, not as the primary signal.
     """
     try:
         buffer = (ctypes.c_uint * 8)()
@@ -53,6 +120,32 @@ def launched_from_explorer():
     except Exception:
         return False
     return count == 1
+
+
+def launched_from_explorer():
+    """True when double-clicked rather than run from an existing terminal.
+
+    Asking who started us answers this directly: Explorer means a
+    double-click, a shell means a terminal is waiting. The attached-process
+    count cannot answer it on its own, because when Windows Terminal is the
+    default terminal application — the default on Windows 11 — a
+    double-clicked program is hosted in a Terminal tab with more than one
+    process attached, and the count looks exactly like a terminal launch.
+    That was B-001: the installer was unreachable by double-click on a
+    stock Windows 11 machine.
+
+    Either signal is enough. Neither fires when run from a shell, where the
+    parent is `powershell.exe`/`cmd.exe`/`pwsh.exe` and the console is
+    shared, so a terminal user is never interrupted by the install prompt.
+    """
+    try:
+        if parent_process_name() == _EXPLORER:
+            return True
+    except Exception:
+        # Never let a detection failure turn into a crash on startup — the
+        # worst outcome of getting this wrong is the ordinary usage message.
+        pass
+    return console_is_ours_alone()
 
 
 def running_executable():
