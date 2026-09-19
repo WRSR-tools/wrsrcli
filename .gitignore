@@ -1,0 +1,5 @@
+# Python build/run artifacts. Note that wrsrcli's own config, manifest and
+# backups live in %APPDATA%\wrsrcli\ and never appear here (AGENTS.md).
+__pycache__/
+*.py[cod]
+*.egg-info/

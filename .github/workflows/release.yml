@@ -1,0 +1,55 @@
+name: Release
+
+# Open item #6, closed by decision D-013: a version tag cuts a release, and
+# workflow_dispatch allows testing the build without creating a throwaway tag.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  # Safety net for transitive actions not yet native to Node 24; the pinned
+  # versions below are the actual fix.
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  build:
+    # Windows-only by design: SPEC.md 1 scopes v1 to Windows, and the tool
+    # reads the Steam path from the Windows registry via `winreg`, which does
+    # not exist on other platforms.
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v6.0.3
+
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.x"
+
+      - name: Install package and PyInstaller
+        # PyInstaller deliberately unpinned so prebuilt bootloaders are used.
+        run: pip install . pyinstaller
+
+      - name: Build the executable
+        run: pyinstaller --onefile --name wrsrcli-windows-amd64 entrypoint.py
+
+      - name: Smoke test the executable
+        # Phase 10's verify: the frozen binary must run and list every command.
+        run: |
+          ./dist/wrsrcli-windows-amd64.exe --version
+          ./dist/wrsrcli-windows-amd64.exe --help
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wrsrcli-windows-amd64
+          path: dist/wrsrcli-windows-amd64.exe
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v3.0.0
+        with:
+          files: dist/wrsrcli-windows-amd64.exe

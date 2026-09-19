@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wrsrcli"
+version = "0.1.0"
+description = "Manage Steam Workshop assets for Workers & Resources: Soviet Republic"
+readme = "README.md"
+requires-python = ">=3.12"
+license = "MIT"
+dependencies = [
+    "PyYAML>=6.0",
+]
+
+[project.scripts]
+wrsrcli = "wrsrcli.cli:main"
+
+[tool.setuptools]
+packages = ["wrsrcli"]
