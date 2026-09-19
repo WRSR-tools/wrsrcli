@@ -10,31 +10,33 @@ the standalone executable (no Python needed) or a `pip` install from source.
 2. Double-click it.
 
 Because it is a command-line tool, it is not much use sitting in your
-Downloads folder, so double-clicking it opens a short prompt:
+Downloads folder, so double-clicking it opens the installer:
 
 ```
-wrsrcli — Workers & Resources: Soviet Republic workshop manager
+wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic
+================================================================================
+This is the installer for the wrsrcli - a command line tool to manage workshop
+assets for Workers and Resources: Soviet Republic.
 
-This is a command-line tool, so it belongs on your PATH.
+For more information on how to use this tool, please visit:
+   https://wrsr-tools.github.io
 
-It can install itself to:  C:\Users\you\AppData\Local\Programs\wrsrcli
-and add that folder to your PATH, so you can run `wrsrcli` from
-any terminal. Nothing else on your system is changed, and no
-administrator rights are needed.
-
-Install now? [Y/n]:
+   Press ENTER to install...
 ```
 
-Press ENTER to accept. Then **open a new terminal window** — PATH changes
-only reach shells started afterwards — and run:
+Press ENTER and it installs itself to
+`%LOCALAPPDATA%\Programs\wrsrcli` and adds that folder to your PATH,
+telling you as it does both. Then **open a new terminal window** — PATH
+changes only reach shells started afterwards — and run:
 
 ```
 wrsrcli --help
 ```
 
-If you would rather not install it, answer `n`. The executable works fine
-run directly from wherever it sits; it only needs installing so that
-`wrsrcli` resolves from any folder.
+**Only ENTER installs.** Type anything at all before pressing ENTER and
+nothing is installed, the same rule `wrsrcli steamcmd --install` follows.
+The executable works fine run directly from wherever it sits; it only needs
+installing so that `wrsrcli` resolves from any folder.
 
 ### Installing from a terminal instead
 

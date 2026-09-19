@@ -132,6 +132,38 @@ folder to the **user** PATH, so `wrsrcli` works from any new terminal.
 
 See decision D-014.
 
+### First run: the double-clicked executable
+
+The standalone `.exe` run with no arguments, from Explorer rather than from
+a terminal, shows the installer screen instead of an argparse usage error.
+Detection of "from Explorer" is by parent process; see B-001.
+
+Printed verbatim — do not reword:
+
+```
+wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic
+================================================================================
+This is the installer for the wrsrcli - a command line tool to manage workshop
+assets for Workers and Resources: Soviet Republic.
+
+For more information on how to use this tool, please visit:
+   https://wrsr-tools.github.io
+
+   Press ENTER to install...
+```
+
+- The **title line and the prompt** are rendered in rusty red; the rest is
+  plain. Colour is used only where the console has been confirmed to handle
+  ANSI escapes, and is suppressed when `NO_COLOR` is set or output is not a
+  terminal. See decision D-016.
+- **Only an empty line (ENTER) proceeds**, matching `steamcmd --install`
+  (D-008). Any other input cancels and nothing is installed.
+- On ENTER the behaviour is exactly `wrsrcli install`'s: the executable is
+  copied to the default directory and that directory is added to the user
+  PATH, with both reported.
+- The window always waits for a final ENTER before exiting, because Explorer
+  closes it the instant the process does.
+
 ### `wrsrcli uninstall`
 
 Reverses `wrsrcli install`. Removes the installed `wrsrcli.exe` and takes

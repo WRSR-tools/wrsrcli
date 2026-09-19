@@ -1,6 +1,9 @@
 """Implementations for the wrsrcli subcommands."""
 
+import ctypes
+import ctypes.wintypes as wintypes
 import datetime
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -32,6 +35,68 @@ OUTPUT_NAME = "WRSR Assets.html"
 STEAMCMD_PROMPT = """Press ENTER to automatically download and install steamcmd from Valve. If you prefer to download and install yourself, please open this link:
    https://developer.valvesoftware.com/wiki/SteamCMD
 """
+
+# Verbatim per SPEC.md 3 — do not reword. The title line and the prompt are
+# shown in rust; everything between them is plain (decision D-016).
+FIRST_RUN_TITLE = (
+    "wrsrcli dev - Workshop Manager for Workers and Resources: Soviet Republic"
+)
+FIRST_RUN_BODY = """\
+================================================================================
+This is the installer for the wrsrcli - a command line tool to manage workshop
+assets for Workers and Resources: Soviet Republic.
+
+For more information on how to use this tool, please visit:
+   https://wrsr-tools.github.io
+"""
+FIRST_RUN_PROMPT = "   Press ENTER to install..."
+
+# Rusty red, matching the game's palette and `output-table`'s own accent.
+# Written as a 24-bit colour: Windows Terminal reproduces it exactly, and
+# legacy conhost maps it to the nearest entry in its palette.
+RUST = "\x1b[38;2;183;65;14m"
+RESET = "\x1b[0m"
+
+_STD_OUTPUT_HANDLE = -11
+_ENABLE_VIRTUAL_TERMINAL_PROCESSING = 0x0004
+
+
+def enable_ansi():
+    """Turn on ANSI escape handling for this console. True if colour is usable.
+
+    Windows Terminal handles escapes out of the box, but legacy `conhost`
+    ignores them unless VT processing is switched on for the handle — and a
+    console that ignores them prints the raw `←[38;2;...m` instead, which is
+    worse than no colour at all. So colour is used only once this has
+    actually succeeded.
+    """
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        if not sys.stdout.isatty():
+            return False
+        kernel32 = ctypes.windll.kernel32
+        kernel32.GetStdHandle.restype = wintypes.HANDLE
+        kernel32.GetStdHandle.argtypes = [wintypes.DWORD]
+
+        handle = kernel32.GetStdHandle(_STD_OUTPUT_HANDLE)
+        mode = wintypes.DWORD()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return False
+        if mode.value & _ENABLE_VIRTUAL_TERMINAL_PROCESSING:
+            return True
+        return bool(
+            kernel32.SetConsoleMode(
+                handle, mode.value | _ENABLE_VIRTUAL_TERMINAL_PROCESSING
+            )
+        )
+    except Exception:
+        return False
+
+
+def rust(text, enabled):
+    """`text` in rusty red, or unchanged where colour is not available."""
+    return f"{RUST}{text}{RESET}" if enabled else text
 
 
 def _store_path(key, raw, label):
@@ -441,25 +506,25 @@ def first_run():
     .exe and double-clicked it wants to install it, so offer exactly that and
     always wait before exiting.
     """
-    print("wrsrcli — Workers & Resources: Soviet Republic workshop manager")
-    print()
-    print("This is a command-line tool, so it belongs on your PATH.")
-    print()
+    colour = enable_ansi()
 
-    directory = install.default_directory()
-    print(f"It can install itself to:  {directory}")
-    print("and add that folder to your PATH, so you can run `wrsrcli` from")
-    print("any terminal. Nothing else on your system is changed, and no")
-    print("administrator rights are needed.")
-    print()
+    print(rust(FIRST_RUN_TITLE, colour))
+    print(FIRST_RUN_BODY)
 
+    # Only an empty line proceeds, matching `steamcmd --install` (D-008).
     try:
-        answer = input("Install now? [Y/n]: ").strip().lower()
+        answer = input(rust(FIRST_RUN_PROMPT, colour) + " ").strip()
     except EOFError:
-        answer = "n"
+        answer = "cancel"
 
-    if answer in ("", "y", "yes"):
+    if answer:
+        print("\nNot installed. You can run this file from a terminal instead,")
+        print("or double-click it again later to install.")
+    else:
         try:
+            # Inside the try: a missing LOCALAPPDATA raises, and on this path
+            # the message has to be shown rather than escape as a traceback.
+            directory = install.default_directory()
             target = install.install(directory)
             print(f"\nInstalled to {target}")
             if install.add_to_user_path(directory):
@@ -471,9 +536,6 @@ def first_run():
             print("    wrsrcli --help")
         except WrsrcliError as exc:
             print(f"\nInstall failed: {exc}")
-    else:
-        print("\nNot installed. You can run this file from a terminal instead,")
-        print("or double-click it again later to install.")
 
     print()
     try:
