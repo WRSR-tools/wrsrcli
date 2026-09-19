@@ -65,13 +65,15 @@ def is_frozen():
     return getattr(sys, "frozen", False)
 
 
-def parent_process_name():
-    """The file name of the process that started us, lowercased, or None.
+def ancestor_names(limit=8):
+    """This process's ancestors' file names, lowercased, nearest first.
 
-    One snapshot, walked once, collecting every PID's name so our parent can
-    be named without a second pass. A PID that has already exited may have
-    been recycled, so a wrong answer is possible in principle; it only ever
-    changes whether we offer to install, so it is not worth guarding against.
+    One snapshot, walked once, collecting every PID's name and parent so the
+    chain can be followed without further passes. A PID that has already
+    exited may have been recycled, so a wrong answer is possible in
+    principle; it only ever changes whether we offer to install, so it is not
+    worth guarding against. `limit` and the seen-set bound the walk, because
+    a recycled PID can otherwise produce a cycle.
     """
     kernel32 = ctypes.windll.kernel32
     kernel32.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
@@ -80,39 +82,66 @@ def parent_process_name():
 
     snapshot = kernel32.CreateToolhelp32Snapshot(_TH32CS_SNAPPROCESS, 0)
     if not snapshot or snapshot == _INVALID_HANDLE_VALUE:
-        return None
+        return []
 
     try:
         entry = _PROCESSENTRY32W()
         entry.dwSize = ctypes.sizeof(entry)
         if not kernel32.Process32FirstW(snapshot, ctypes.byref(entry)):
-            return None
+            return []
 
-        me = os.getpid()
-        parent_id = None
-        names = {}
+        tree = {}
         while True:
-            names[entry.th32ProcessID] = entry.szExeFile
-            if entry.th32ProcessID == me:
-                parent_id = entry.th32ParentProcessID
+            tree[entry.th32ProcessID] = (entry.szExeFile, entry.th32ParentProcessID)
             if not kernel32.Process32NextW(snapshot, ctypes.byref(entry)):
                 break
     finally:
         kernel32.CloseHandle(snapshot)
 
-    if parent_id is None:
-        return None
-    name = names.get(parent_id)
-    return name.lower() if name else None
+    names = []
+    pid = os.getpid()
+    seen = set()
+    while pid in tree and pid not in seen and len(names) < limit:
+        seen.add(pid)
+        name, parent = tree[pid]
+        if pid != os.getpid():
+            names.append(name.lower() if name else "")
+        pid = parent
+    return names
+
+
+def launching_process_name():
+    """The name of whatever actually started us, past our own bootloader.
+
+    Not simply the parent. A PyInstaller `--onefile` build is two processes:
+    the bootloader unpacks the payload to a temp folder and runs a *second*
+    copy of the same executable, which is where this code runs. So the
+    immediate parent is always our own `.exe` and the real launcher is a
+    grandparent. Every leading generation sharing our executable's name is
+    skipped for that reason.
+
+    This is what B-001 turned on. Both of the original signals were defeated
+    by the same detail — the parent was `wrsrcli.exe`, and the console had
+    two processes attached rather than one, because the bootloader is
+    attached too.
+    """
+    try:
+        own = os.path.basename(sys.executable).lower()
+    except Exception:
+        own = ""
+    for name in ancestor_names():
+        if name and name != own:
+            return name
+    return None
 
 
 def console_is_ours_alone():
     """True when this process is the only one attached to its console.
 
-    The original — and until B-001 the only — double-click test. It holds
-    under the legacy `conhost.exe` console host, where Explorer gives a
-    console application a console of its own while a shell shares the one it
-    already has. Kept as a second opinion, not as the primary signal.
+    The original — and until B-001 the only — double-click test. It cannot
+    work in the shipped `--onefile` build, where the bootloader is attached
+    to the same console and the count is never below two. Kept only as a
+    second opinion for an unfrozen or one-folder build, where it does hold.
     """
     try:
         buffer = (ctypes.c_uint * 8)()
@@ -126,20 +155,17 @@ def launched_from_explorer():
     """True when double-clicked rather than run from an existing terminal.
 
     Asking who started us answers this directly: Explorer means a
-    double-click, a shell means a terminal is waiting. The attached-process
-    count cannot answer it on its own, because when Windows Terminal is the
-    default terminal application — the default on Windows 11 — a
-    double-clicked program is hosted in a Terminal tab with more than one
-    process attached, and the count looks exactly like a terminal launch.
-    That was B-001: the installer was unreachable by double-click on a
-    stock Windows 11 machine.
+    double-click, a shell means a terminal is waiting. See
+    `launching_process_name()` for why that question cannot be answered by
+    looking at the immediate parent, which is what made B-001 survive its
+    first fix.
 
     Either signal is enough. Neither fires when run from a shell, where the
-    parent is `powershell.exe`/`cmd.exe`/`pwsh.exe` and the console is
+    launcher is `powershell.exe`/`cmd.exe`/`pwsh.exe` and the console is
     shared, so a terminal user is never interrupted by the install prompt.
     """
     try:
-        if parent_process_name() == _EXPLORER:
+        if launching_process_name() == _EXPLORER:
             return True
     except Exception:
         # Never let a detection failure turn into a crash on startup — the

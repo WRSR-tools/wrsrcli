@@ -136,7 +136,8 @@ See decision D-014.
 
 The standalone `.exe` run with no arguments, from Explorer rather than from
 a terminal, shows the installer screen instead of an argparse usage error.
-Detection of "from Explorer" is by parent process; see B-001.
+Detection of "from Explorer" identifies the launching process, looking
+past our own PyInstaller bootloader generations; see B-001.
 
 Printed verbatim — do not reword:
 
