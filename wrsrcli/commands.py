@@ -709,6 +709,91 @@ def cmd_uninstall(args):
     return 0
 
 
+COMPLETION_MARKER = "# wrsrcli Tab completion for PowerShell"
+COMPLETION_PROMPT = "Press ENTER to add it, or anything else to cancel: "
+
+
+def cmd_completion(args):
+    """Print, or install into the PowerShell profile, a Tab-completion script."""
+    from .cli import completion_script
+
+    script = completion_script()
+
+    if not getattr(args, "install", False):
+        print(script, end="")
+        return 0
+
+    profile = _powershell_profile()
+    if profile is None:
+        raise WrsrcliError(
+            "could not find your PowerShell profile — run `wrsrcli completion` "
+            "and add the printed script to it yourself."
+        )
+
+    existing = ""
+    if profile.exists():
+        try:
+            existing = profile.read_text(encoding="utf-8-sig")
+        except OSError as exc:
+            raise WrsrcliError(f"could not read {profile}: {exc}") from exc
+
+    print(f"This will add wrsrcli's Tab completion to:\n   {profile}")
+    if COMPLETION_MARKER in existing:
+        print("A previous version is already there and will be replaced.")
+    print()
+    if input(COMPLETION_PROMPT).strip():
+        print("Cancelled. Nothing was written.")
+        return 0
+
+    # Replacing rather than appending, so upgrading does not leave two
+    # completers fighting over the same command.
+    kept = _without_completion(existing)
+    body = (kept.rstrip("\n") + "\n\n" if kept.strip() else "") + script
+    try:
+        profile.parent.mkdir(parents=True, exist_ok=True)
+        profile.write_text(body, encoding="utf-8")
+    except OSError as exc:
+        raise WrsrcliError(f"could not write {profile}: {exc}") from exc
+
+    print(f"Written to {profile}")
+    print("Open a new PowerShell window, or run `. $PROFILE`, to use it.")
+    return 0
+
+
+def _powershell_profile():
+    """The current user's PowerShell profile path, without running PowerShell."""
+    documents = Path.home() / "Documents"
+    # PowerShell 7 first: someone who has it is likely using it.
+    for folder in ("PowerShell", "WindowsPowerShell"):
+        candidate = documents / folder / "Microsoft.PowerShell_profile.ps1"
+        if candidate.exists():
+            return candidate
+    # Nothing exists yet — Windows PowerShell ships with the OS, so that is
+    # the safe one to create.
+    return documents / "WindowsPowerShell" / "Microsoft.PowerShell_profile.ps1"
+
+
+def _without_completion(text):
+    """`text` with any previously installed wrsrcli completer removed."""
+    if COMPLETION_MARKER not in text:
+        return text
+    kept, skipping, depth = [], False, 0
+    for line in text.splitlines():
+        if not skipping and line.startswith(COMPLETION_MARKER):
+            skipping = True
+            depth = 0
+            continue
+        if skipping:
+            depth += line.count("{") - line.count("}")
+            # The block ends when the braces balance again, on a line that
+            # actually closed one.
+            if depth <= 0 and "}" in line:
+                skipping = False
+            continue
+        kept.append(line)
+    return "\n".join(kept)
+
+
 def cmd_open_web(args):
     """Open the wrsrcli website in the user's default browser."""
     print(f"Opening {WEBSITE}")

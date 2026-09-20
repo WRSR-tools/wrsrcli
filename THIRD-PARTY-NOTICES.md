@@ -24,12 +24,12 @@ SDK Access Agreement.
 
 ### If you fork or redistribute `wrsrcli`
 
-Section 6.2 of the Steamworks agreement bars assignment of any rights to you. If you fork or redistribute this software, you must acceept the Steamworks SDK Access Agreement.
+Section 6.2 of the Steamworks agreement bars assignment of any rights to you. If you fork or redistribute this software, you must accept the Steamworks SDK Access Agreement.
 
 If you cannot accept that, delete the file.
 
 ### Trademarks
 
-`wrsrcli`is not affiliated with, endorsed by, or a partner of Valve Corporation.
+`wrsrcli` is not affiliated with, endorsed by, or a partner of Valve Corporation.
 "Steam", "Steamworks" and "Steam Workshop" are used only to describe what
 this tool interoperates with.
