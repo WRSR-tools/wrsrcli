@@ -49,3 +49,14 @@ execution plan, progress log and decision records live under `dev/`, and
 ## License
 
 Apache License 2.0 — see [LICENSE](LICENSE).
+
+One bundled file is **not** covered by it:
+`wrsrcli/vendor/steamworks/steam_api64.dll` is Valve Corporation's
+Steamworks SDK Redistributable, redistributed under the
+[Steamworks SDK Access Agreement](https://partner.steamgames.com/documentation/sdk_access_agreement).
+It is what lets wrsrcli subscribe to workshop items on your behalf; delete
+it and wrsrcli opens the item's Steam page for you to click Subscribe
+instead. See [NOTICE](NOTICE) and
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
+wrsrcli is not affiliated with or endorsed by Valve Corporation.
