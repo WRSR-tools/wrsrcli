@@ -34,7 +34,7 @@ jobs:
         run: pip install . pyinstaller
 
       - name: Build the executable
-        run: pyinstaller --onefile --name wrsrcli-windows-amd64 entrypoint.py
+        run: pyinstaller --onefile --name wrsrcli-windows-amd64 --add-binary "wrsrcli/vendor/steamworks/steam_api64.dll;wrsrcli/vendor/steamworks" entrypoint.py
 
       - name: Smoke test the executable
         # Phase 10's verify: the frozen binary must run and list every command.

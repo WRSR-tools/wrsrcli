@@ -1,0 +1,24 @@
+wrsrcli
+Copyright 2026 WRSR-tools
+
+Licensed under the Apache License, Version 2.0 (the "License"). See LICENSE.
+
+------------------------------------------------------------------------
+This product includes software developed by Valve Corporation.
+
+The file `wrsrcli/vendor/steamworks/steam_api64.dll` is the Steamworks SDK
+Redistributable, Copyright (c) 1996-2026, Valve Corporation, all rights
+reserved. It is NOT licensed under the Apache License, Version 2.0, and no
+Apache License rights are granted in it.
+
+It is redistributed under section 1.1(b) of the Steamworks SDK Access
+Agreement, which permits distribution of the contents of the SDK's
+`redistributable_bin` folder along with the software built against it:
+
+    https://partner.steamgames.com/documentation/sdk_access_agreement
+
+Anyone who redistributes wrsrcli, including in forked or modified form,
+distributes that file under their own acceptance of that agreement. The
+Apache License granted over the rest of this work does not, and cannot,
+convey rights in it. See THIRD-PARTY-NOTICES.md.
+------------------------------------------------------------------------
