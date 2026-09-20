@@ -179,11 +179,13 @@ def build_status(entries, rows, details=None, api_mode=False):
             ],
         }
 
-    if api_mode:
-        stale = updates.outdated(entries, details or {})
+    if updates.can_check_staleness(entries, api_mode):
+        stale = updates.outdated(entries, details)
         status["assets"] = {
             "state": "stale" if stale else "ok",
             "items": [describe(item["item_id"]) for item in stale],
+            # Without a key this is Steam's cached view, not a live check.
+            "source": "api" if api_mode else "acf",
         }
 
     return status
@@ -293,6 +295,7 @@ _TEMPLATE = """<!DOCTYPE html>
   .status ul {{ margin: 6px 0; padding: 0 0 0 18px; list-style: none; }}
   .status li {{ padding: 2px 0; }}
   .status .sid {{ font-family: Consolas, ui-monospace, monospace; font-size: 13px; }}
+  .status .note {{ color: var(--muted); font-size: 13px; }}
   .status code {{
     font-family: Consolas, ui-monospace, monospace; font-size: 13px;
     background: var(--panel); border: 1px solid var(--line);
@@ -404,6 +407,11 @@ _TEMPLATE = """<!DOCTYPE html>
           var code = document.createElement('code');
           code.textContent = part.code;
           tail.appendChild(code);
+        }} else if (part.muted) {{
+          var note = document.createElement('span');
+          note.className = 'note';
+          note.textContent = part.text;
+          tail.appendChild(note);
         }} else {{
           tail.appendChild(document.createTextNode(part.text));
         }}
@@ -427,12 +435,20 @@ _TEMPLATE = """<!DOCTYPE html>
 
   if (status.assets) {{
     var assetsOk = status.assets.state === 'ok';
+    var tail = assetsOk ? [] : [{{text: 'Run '}}, {{code: 'wrsrcli update'}},
+                                {{text: ' to update.'}}];
+    // Say which check produced this. Steam's cached view is worth trusting,
+    // but not worth passing off as a live one.
+    if (status.assets.source === 'acf') {{
+      tail.push({{text: (assetsOk ? '' : ' ') +
+        'Checked against Steam\\u2019s own record, as of its last sync. ' +
+        'Set an API key for a live check.', muted: true}});
+    }}
     accordion('Asset status', assetsOk, 'OK', 'Update needed',
       assetsOk ? 'All assets are up to date. No further action is needed.'
                : 'The following items need to be updated:',
       assetsOk ? null : status.assets.items,
-      assetsOk ? null : [{{text: 'Run '}}, {{code: 'wrsrcli update'}},
-                         {{text: ' to update.'}}]);
+      tail.length ? tail : null);
   }}
 
   columns.forEach(function (col) {{

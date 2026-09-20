@@ -4,6 +4,10 @@ SPEC.md 2.1: two blocks cover the same item IDs. `WorkshopItemsInstalled`
 carries `size`, `timeupdated`, `manifest`; `WorkshopItemDetails` carries
 `timeupdated`, `timetouched`, `subscribedby`, `manifest` but no `size`. An
 item in details but not in installed is subscribed-but-not-downloaded.
+
+Details also carries `latest_timeupdated`/`latest_manifest` — Steam's own
+record of the newest version it knows about, as of `TimeLastFullCheck`.
+That makes staleness answerable locally, without the Web API (D-022).
 """
 
 from . import vdf
@@ -21,6 +25,8 @@ class WorkshopItem:
         "timetouched",
         "subscribedby",
         "manifest",
+        "latest_timeupdated",
+        "latest_manifest",
     )
 
     def __init__(self, item_id):
@@ -31,6 +37,8 @@ class WorkshopItem:
         self.timetouched = None
         self.subscribedby = None
         self.manifest = None
+        self.latest_timeupdated = None
+        self.latest_manifest = None
 
     def __repr__(self):
         state = "installed" if self.installed else "subscribed-only"
@@ -63,6 +71,11 @@ def parse(path):
         item = items.setdefault(item_id, WorkshopItem(item_id))
         item.timetouched = vdf.lookup(fields, "timetouched")
         item.subscribedby = vdf.lookup(fields, "subscribedby")
+        # Steam's view of the newest published version, refreshed on its own
+        # schedule. Compared against timeupdated, this is staleness with no
+        # API call (decision D-022).
+        item.latest_timeupdated = vdf.lookup(fields, "latest_timeupdated")
+        item.latest_manifest = vdf.lookup(fields, "latest_manifest")
         # Details also carries timeupdated/manifest; installed wins where both
         # are present, since that block describes what is actually on disk.
         if item.timeupdated is None:

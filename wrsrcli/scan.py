@@ -54,6 +54,9 @@ def build(workshop_path, acf_path):
                 "item_type": item_type,
                 "date_updated": item.timeupdated,
                 "date_touched": item.timetouched,
+                # Steam's own note of the newest version it knows of, which
+                # makes staleness answerable without the API (D-022).
+                "date_latest": item.latest_timeupdated,
             }
         )
 
@@ -102,6 +105,9 @@ def _folder_only(workshop_path, known, warnings):
                 "item_type": item_type,
                 "date_updated": (known_download or {}).get("time_updated"),
                 "date_touched": None,
+                # Steam has no record of these at all, so it knows of no
+                # newer version either; only the API can say (D-022).
+                "date_latest": None,
             }
         )
 
