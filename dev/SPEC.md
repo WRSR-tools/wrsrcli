@@ -313,34 +313,49 @@ name, no separately-sourced posted date").
 ### 4.3 `wrsrcli import {path}`
 
 Reads a user-authored YAML import list (format below) describing file
-operations to apply for a given workshop item.
+operations to apply for one or more workshop items. The markup is defined
+by WMLS — `dev/wmls/standard.v1.md` is the normative document; this
+section records what `wrsrcli` implements of it.
 
-**YAML schema:**
+**YAML schema (WMLS `v1`):**
 
 ```yaml
-item: 3780739284
-copy:
-  - src: foldernamehere/
-    dst: "[GAME]/media_soviet/signs/"
-  - src: "*"
-    dst: "[GAME]/media_soviet/signs/"
-  - src: signscript.txt
-    dst: "[GAME]/media_soviet/signs/"
-  - src: foldername/somescript.txt
-    dst: "[WORKSHOP]/000000000000000/"
-remove:
-  - "[GAME]/media_soviet/signs/foldertodelete/"
-  - "[GAME]/media_soviet/signs/filetodel.ete"
+version: 1
+
+items:
+  - item: 3780739284
+    copy:
+      - src: foldernamehere/
+        dst: "[GAME]/media_soviet/signs/"
+      - src: "*"
+        dst: "[GAME]/media_soviet/signs/"
+      - src: signscript.txt
+        dst: "[GAME]/media_soviet/signs/"
+      - src: foldername/somescript.txt
+        dst: "[WORKSHOP]/000000000000000/"
+    remove:
+      - "[GAME]/media_soviet/signs/foldertodelete/"
+      - "[GAME]/media_soviet/signs/filetodel.ete"
+    depends-mandatory:
+      - item: 3621284903
+    depends-optional:
+      - item: 3111111111
+        message: "Short message shown when the user is asked whether to install"
 ```
 
-- `item`: the origin workshop item ID this import list applies to.
+- `version`: the WMLS version the file is written to. Required. This build
+  understands `version: 1`; any other value is an error.
+- `items`: the list of origin items the file describes. Required, non-empty,
+  and used even when there is only one item. An item may appear only once.
+- `item`: the origin workshop item ID this entry applies to.
 - `copy`: list of `{src, dst}` pairs. `src` is relative to the origin
   item's workshop folder. `dst` uses `[GAME]` or `[WORKSHOP]/{id}/` as
   path placeholders, resolved via the configured/autodetected game path
   and the target item's workshop folder respectively.
   - `src: "*"` means **everything in the origin item's workshop folder,
     except `workshopconfig.ini`** (that exclusion is fixed, not
-    user-configurable in v1).
+    user-configurable in v1). `*` is not a wildcard inside a path —
+    `src: "signs/*"` is rejected; `src: "signs/"` copies that folder.
   - Copying into `[WORKSHOP]/{id}/` (another item's own folder) is
     intentional — supports import lists that patch/alter another mod's
     files.
@@ -353,14 +368,30 @@ remove:
     written, and ENTER skips that destination. See decision D-010.
 - `remove`: list of destination paths to remove. Always in `[GAME]` or
   `[WORKSHOP]/{id}/` space (destination paths, not origin-relative).
+- `depends-mandatory`: items the origin needs. Each is `{item}`. They are
+  downloaded without asking if absent; a download that fails aborts the
+  item's import.
+- `depends-optional`: items the origin benefits from. Each is
+  `{item, message}`; `message` is required and is what the user is shown
+  when asked. ENTER downloads, anything else skips (D-008, D-018).
+
+**Backwards compatibility.** A file with no `version:` line is the `beta`
+markup — a single top-level `item:` with its own `copy:`/`remove:` and no
+dependencies. It is still applied, with a deprecation warning on stderr.
+See decision D-018.
 
 **Execution order for `import {path}`:**
 
-1. Check whether the origin item (`item:` field) is already present
+Each item in `items` is processed in turn, in file order. One item is one
+backup generation. For each item:
+
+1. Resolve `depends-mandatory`, then `depends-optional`, downloading via
+   SteamCMD anything not already installed.
+2. Check whether the origin item (`item:` field) is already present
    locally. If not, download it via SteamCMD first.
-2. Execute all `copy` operations.
-3. Execute all `remove` operations.
-4. Every file touched by `copy` (overwritten) or `remove` (taken away) is
+3. Execute all `copy` operations.
+4. Execute all `remove` operations.
+5. Every file touched by `copy` (overwritten) or `remove` (taken away) is
    backed up first — **nothing is ever hard-deleted.** See §5.
 
 ### 4.4 `wrsrcli restore {steamid}`
