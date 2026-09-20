@@ -4,6 +4,10 @@ Every command is `wrsrcli {command}`. Run `wrsrcli` on its own, or
 `wrsrcli --help`, for the list; `wrsrcli {command} --help` shows one
 command's options.
 
+The help lists command names and headings in rusty red where your console
+supports it. Set `NO_COLOR=1` to turn that off, or redirect the output to a
+file, which is always plain text.
+
 This page covers everything except import lists, which have their own
 guide: [Import.md](Import.md).
 

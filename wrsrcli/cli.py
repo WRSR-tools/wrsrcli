@@ -11,6 +11,63 @@ from . import __version__, commands, install
 from .errors import WrsrcliError
 
 
+class _RustHelpFormatter(argparse.HelpFormatter):
+    """Help with D-016's rusty red on the headings and the command names.
+
+    Colour is applied *after* `argparse` has laid the text out, never before.
+    The escape sequences are invisible on screen but not to `len()`, and the
+    help column is positioned by measuring the command names — colouring them
+    first pushes every description onto a line of its own.
+    """
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._rust = commands.enable_ansi()
+
+    def _set_color(self, color):
+        # Python 3.14+ colours the help itself, through this hook. This screen
+        # brings its own accent, so argparse's palette is turned off rather
+        # than layered underneath it.
+        super()._set_color(False)
+
+    def start_section(self, heading):
+        super().start_section(
+            commands.rust(heading, self._rust) if heading else heading
+        )
+
+    def _format_action(self, action):
+        text = super()._format_action(action)
+        if not self._rust:
+            return text
+        # The invocation is what `super()` has already padded the column to,
+        # and it always precedes the description, so the first occurrence is
+        # the one to paint.
+        name = self._format_action_invocation(action)
+        return text.replace(name, commands.rust(name, True), 1)
+
+    def format_help(self):
+        text = super().format_help()
+        if not self._rust:
+            return text
+        if text.startswith("usage:"):
+            text = commands.rust("usage:", True) + text[len("usage:") :]
+        # A section's colon is appended outside the heading argparse was given,
+        # so it lands after the reset. Move it back inside.
+        return text.replace(f"{commands.RESET}:", f":{commands.RESET}")
+
+
+class _RustParser(argparse.ArgumentParser):
+    """An `ArgumentParser` whose help carries the accent unless told otherwise.
+
+    Subparsers are built from `type(self)`, so every `wrsrcli {command} --help`
+    inherits this without each one having to ask for it.
+    """
+
+    def __init__(self, *args, **kwargs):
+        kwargs.setdefault("formatter_class", _RustHelpFormatter)
+        super().__init__(*args, **kwargs)
+
+
 def _not_implemented(command):
     """Build a handler that reports `command` as unimplemented."""
 
@@ -22,7 +79,7 @@ def _not_implemented(command):
 
 
 def build_parser():
-    parser = argparse.ArgumentParser(
+    parser = _RustParser(
         prog="wrsrcli",
         description=(
             "Inventory, document, and manage Steam Workshop assets for "

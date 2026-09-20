@@ -222,6 +222,15 @@ Press ENTER to automatically download and install steamcmd from Valve. If you pr
 
 ## 4. Commands
 
+`wrsrcli --help`, and `wrsrcli` with no arguments (D-017), list the
+commands below. Section headings, command names, option strings and the
+`usage:` prefix are shown in the rusty red of D-016; descriptions keep the
+terminal's own foreground. The same colour rules as the first-run screen
+apply — the accent appears only where the console has been confirmed to
+handle ANSI escapes, and never when `NO_COLOR` is set or output is
+redirected. Python 3.14's own colourised help is suppressed in favour of
+this. See D-019.
+
 ### 4.1 `wrsrcli scan`
 
 Builds `manifest.json` at `%APPDATA%\wrsrcli\manifest.json` (decision
