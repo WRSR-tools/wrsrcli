@@ -1,7 +1,7 @@
 """Persistent config in %APPDATA%\\wrsrcli\\config.json.
 
 Never stored inside the repo (SPEC.md 3) — this holds the Steam Web API
-key and the resolved game/workshop paths.
+the resolved game/workshop paths.
 """
 
 import json
@@ -10,7 +10,6 @@ from pathlib import Path
 
 from .errors import WrsrcliError
 
-API_KEY = "api_key"
 GAME_PATH = "game_path"
 WORKSHOP_PATH = "workshop_path"
 

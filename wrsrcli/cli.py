@@ -134,13 +134,6 @@ def build_parser():
     )
     manual_check.set_defaults(func=commands.cmd_manual_check)
 
-    api = subcommands.add_parser("api", help="set or remove the Steam Web API key")
-    api.add_argument("key", nargs="?", help="the Steam Web API key to store")
-    api.add_argument(
-        "-r", "--remove", action="store_true", help="remove the stored API key"
-    )
-    api.set_defaults(func=commands.cmd_api)
-
     path = subcommands.add_parser("path", help="set or auto-detect game/workshop paths")
     path.add_argument("-g", "--game", metavar="PATH", help="set the game install path")
     path.add_argument(
@@ -180,18 +173,6 @@ def build_parser():
         "open-web", help="open the wrsrcli website in your browser"
     )
     open_web.set_defaults(func=commands.cmd_open_web)
-
-    steamcmd = subcommands.add_parser("steamcmd", help="install SteamCMD")
-    steamcmd.add_argument(
-        "-i", "--install", action="store_true", help="download and install SteamCMD"
-    )
-    steamcmd.add_argument(
-        "-p",
-        "--path",
-        metavar="PATH",
-        help="install to PATH instead of [STEAMPATH]/steamcmd",
-    )
-    steamcmd.set_defaults(func=commands.cmd_steamcmd)
 
     return parser
 

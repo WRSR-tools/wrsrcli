@@ -41,28 +41,6 @@ it wrong, or when you want to see what was found.
 An explicit `-g`/`-w` always wins over a detected value, including when
 given in the same invocation as `-a`.
 
-### `wrsrcli api {key}`
-
-Stores a [Steam Web API key](https://steamcommunity.com/dev/apikey), which
-`output-table` uses to fetch author names, posted dates and file sizes, and
-`scan` uses to find out which items depend on which.
-
-```
-wrsrcli api 0123456789ABCDEF0123456789ABCDEF
-```
-
-The key is written to `%APPDATA%\wrsrcli\config.json`. It is never printed
-back to you, never written into the HTML table, and never included in an
-error message.
-
-| Command | Effect |
-|---|---|
-| `wrsrcli api` | Say whether a key is stored, without showing it |
-| `wrsrcli api {key}` | Store a key, replacing any existing one |
-| `wrsrcli api -r` / `--remove` | Delete the stored key |
-
-Everything except the three API-only columns works without a key.
-
 ## Inventory
 
 ### `wrsrcli scan`
@@ -82,19 +60,22 @@ lists items you are subscribed to but which have not been fetched yet;
 those are skipped.
 
 Every workshop download ships a `workshopconfig.ini`, so if one is missing
-the item was changed locally. That item is still listed, with its owner and
-type left empty, and a warning is printed naming it.
+the item was changed locally. That item is still listed, and its name and
+author are filled in from Steam, which knows both.
 
 **Dependencies.** Many workshop items require another item to work — a mod
-loader, say. If you have set an API key, `scan` asks Steam which items each
-of yours requires, records them in the manifest, and tells you about any
-that are not installed. In the example above, four mods need TesmioLoader
-and it is not there; those mods are unlikely to be working in-game. Steam
-does not warn you about this anywhere, and nothing local shows it.
+loader, say. `scan` asks Steam which items each of yours requires, records
+them in the manifest, and tells you about any that are not installed. In
+the example above, four mods need TesmioLoader and it is not there; those
+mods are unlikely to be working in-game. Steam does not warn you about this
+anywhere, and nothing local shows it.
 
-Without a key, `scan` works exactly as it always did and says that
-dependencies were not checked. If the API call fails, you get a warning and
-the rest of the manifest is still written.
+`scan` also collects each item's title, author, published date and size
+while it is there, so the table can show them later without Steam running.
+
+**Steam has to be running** for that part, signed in to the account that
+owns the game. Without it, `scan` still writes the inventory from your local
+files, warns, and leaves the rest out.
 
 Re-run `scan` whenever you subscribe to or unsubscribe from anything.
 
@@ -115,9 +96,9 @@ or to save alongside it with a timestamp in the name.
 The file embeds its own data and styling and loads nothing from the
 internet, so it keeps working offline, forever, and can be copied anywhere.
 
-Columns without an API key: Item ID, Name, Type, Tags, Owner ID, Updated.
-With a key, Owner ID is replaced by the author's display name and Posted
-and Size are added.
+Columns: Item ID, Name, Type, Tags, Author, Posted, Updated and Size.
+Everything comes from the manifest, so this works with Steam closed and no
+internet.
 
 Item IDs link to the workshop page, and authors to their Steam profile.
 Both open in a new tab. The links are the only thing in the file that
@@ -151,13 +132,11 @@ in its own heading, so you can read them without opening anything:
 A green panel is closed — there is nothing inside worth reading. A red one
 is already open, and tells you to run `wrsrcli update`.
 
-Both panels work **without** an API key. Steam itself records the newest
-version it knows of for each item, so "is this out of date" is answered
-from your own Steam files. With a key set, the check is made live against
-the workshop instead; without one, the panel says it checked Steam's own
-record as of its last sync. If neither can answer — an old manifest, or an
-item only `update` put there — the panel is left out rather than claiming
-everything is current when it cannot tell.
+Both panels read the manifest, so they work with Steam closed. The update
+check uses Steam's own record of the newest version it knows of, as of its
+last sync; `wrsrcli update` asks Steam directly for a live answer. If the
+manifest has nothing to check against, the panel is left out rather than
+claiming everything is current when it cannot tell.
 
 The **Updated** column is the version *you have installed*, not the latest
 published. That is the point of the Asset status panel: if the two differ,
@@ -166,31 +145,27 @@ do not have.
 
 ### `wrsrcli update`
 
-Downloads what the table says is needed — missing dependencies, and items
-with a newer version on the workshop. Works with or without an API key.
+Subscribes to what the table says is needed — missing dependencies, and
+items with a newer version on the workshop.
 
 ```
 > wrsrcli update
 Missing dependencies (1):
    - 3773169177 TesmioLoader v. b0.3.6 (for WRSR 1.1.1.9) — required by 3773771138, 3774939545, 3779449644, 3779842468
 
-1 item(s) will be downloaded through SteamCMD into your workshop folder.
-Press ENTER to download, or anything else to cancel:
+Steam will subscribe to and install 1 item(s), and keep them updated from now on.
+Press ENTER to subscribe, or anything else to cancel:
 ```
 
-Nothing is downloaded until you press ENTER; anything else cancels. You
-need SteamCMD — run `wrsrcli steamcmd --install` first if you have not.
+Nothing happens until you press ENTER; anything else cancels. **Steam must
+be running**, signed in to the account that owns the game.
 
-Files go into your workshop folder, where the game looks for them. If an
-item is being **replaced** because it is out of date, the old copy is
-backed up first, so `wrsrcli rollback {steamid}` puts it back.
+This is a real subscription — exactly as if you had clicked Subscribe on
+the workshop page. Steam downloads the item, records it, and keeps it
+updated from then on. wrsrcli waits until Steam reports each item installed
+before moving on.
 
 Re-run `wrsrcli scan` afterwards so the manifest catches up.
-
-> **Steam does not know about items downloaded this way.** It will not keep
-> them updated, and verifying the game's files may remove them. Subscribing
-> to an item in Steam is the durable fix; `update` is for getting a
-> dependency in place now, or when subscribing is not an option.
 
 If Steam's API is unreachable or rejects your key, `output-table` says so
 and falls back to the local-only table rather than failing — you still get
@@ -210,31 +185,6 @@ These five commands are covered in full in [Import.md](Import.md).
 | `wrsrcli rollback {steamid}` | Undo what this item's import did **elsewhere** |
 | `wrsrcli manual-check` | Flag tracked imports that Steam looks to have reverted |
 | `wrsrcli manual-rerun` | Re-apply every tracked import list |
-
-## SteamCMD
-
-### `wrsrcli steamcmd --install`
-
-Installs SteamCMD, which `import` uses to fetch an origin item you are not
-subscribed to. Default location is `[STEAMPATH]/steamcmd`; `-p "{path}"`
-puts it elsewhere.
-
-This is the only part of `wrsrcli` that downloads and runs third-party
-code, so it always asks first:
-
-```
-Press ENTER to automatically download and install steamcmd from Valve. If you prefer to download and install yourself, please open this link:
-   https://developer.valvesoftware.com/wiki/SteamCMD
-```
-
-**Only pressing ENTER proceeds.** Typing anything at all cancels and
-nothing is downloaded. Workshop downloads through SteamCMD are made
-anonymously — `wrsrcli` never asks for, stores or passes on your Steam
-credentials. An item that requires an account will fail here, and you will
-need to fetch it through Steam yourself.
-
-If SteamCMD is already installed at the target path, the command says so
-and leaves it alone.
 
 ## Managing the tool itself
 

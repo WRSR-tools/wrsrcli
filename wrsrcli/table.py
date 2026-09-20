@@ -66,26 +66,20 @@ def _format_size(raw):
     return ""
 
 
-def build_rows(entries, workshop_path, details=None, authors=None):
+def build_rows(entries, workshop_path):
     """Combine manifest entries with each item's workshopconfig.ini.
 
-    SPEC.md 4.2 sources the display name and tags from 2.2 data, which the
-    manifest schema (4.1) does not carry, so the config files are read here
-    at render time. The manifest itself is not rebuilt.
-
-    `details` and `authors` carry Steam Web API enrichment when a key is
-    set; both are None in the no-API path.
+    Everything Steam knows was written into the manifest by `scan`, so this
+    renders with Steam closed and with no network (decision D-024). The
+    config files are still read here for the display name and tags, which
+    SPEC 4.2 sources from 2.2 data.
     """
-    details = details or {}
-    authors = authors or {}
-    # The installed set is the manifest's own entry list; a dependency is met
-    # when it is one of them.
     installed = {e.get("item_id") for e in entries if e.get("item_id")}
 
     rows = []
     for entry in entries:
         item_id = entry.get("item_id", "")
-        name = NO_CONFIG
+        name = ""
         tags = []
 
         config_file = workshop_path / item_id / "workshopconfig.ini"
@@ -93,19 +87,15 @@ def build_rows(entries, workshop_path, details=None, authors=None):
             record = workshopconfig.load(config_file)
             name = workshopconfig.first(record, ITEM_NAME, "") or ""
             tags = record.get(TAGS, [])
+        # Steam's title covers an item whose workshopconfig.ini was deleted
+        # locally — the case D-005 could previously only leave blank.
+        if not name:
+            name = entry.get("title") or NO_CONFIG
 
         item_type = entry.get("item_type") or ""
         owner_id = entry.get("owner_id")
-        enriched = details.get(item_id, {})
-
-        # The *installed* version's time, from the .acf. The API's
-        # time_updated is the workshop's current version, which is what the
-        # Asset status accordion compares against — showing it here would
-        # display a version the user does not have (decision D-021). It is
-        # used only as a fallback for an item with no local timestamp at all.
-        updated = entry.get("date_updated") or enriched.get("time_updated")
-        posted = enriched.get("time_created")
-        size = enriched.get("file_size")
+        updated = entry.get("date_updated")
+        posted = entry.get("date_published")
 
         row = {
             "item_id": item_id,
@@ -114,16 +104,14 @@ def build_rows(entries, workshop_path, details=None, authors=None):
             "item_type_raw": item_type,
             "tags": ", ".join(tags),
             "owner_id": owner_id or "—",
+            "author": entry.get("author") or owner_id or "—",
             "updated": _format_date(updated),
             "updated_sort": int(updated) if updated else 0,
+            "posted": _format_date(posted),
+            "posted_sort": int(posted) if posted else 0,
+            "size": _format_size(entry.get("size_on_disk")),
+            "size_sort": int(entry.get("size_on_disk") or 0),
         }
-
-        if details or authors:
-            row["author"] = authors.get(owner_id) or (owner_id or "—")
-            row["posted"] = _format_date(posted)
-            row["posted_sort"] = int(posted) if posted else 0
-            row["size"] = _format_size(size)
-            row["size_sort"] = int(size) if size else 0
 
         if entry.get("dependencies"):
             row["dependencies"] = [
@@ -145,13 +133,12 @@ def build_rows(entries, workshop_path, details=None, authors=None):
     return rows
 
 
-def build_status(entries, rows, details=None, api_mode=False):
-    """The payload behind the two status accordions (decision D-021).
+def build_status(entries, rows):
+    """The payload behind the two status accordions (D-021, D-024).
 
-    `assets` is None without an API key: staleness needs the workshop's
-    current version, and there is no local source for it. `dependencies` is
-    None when no scan has recorded any, so the accordion is absent rather
-    than claiming everything is fine.
+    Both read the manifest, so both work with Steam closed. `assets` is None
+    when no entry carries `date_latest` — the accordion is absent rather
+    than claiming everything is fine on the strength of knowing nothing.
     """
     named = {row["item_id"]: row for row in rows}
 
@@ -179,13 +166,12 @@ def build_status(entries, rows, details=None, api_mode=False):
             ],
         }
 
-    if updates.can_check_staleness(entries, api_mode):
-        stale = updates.outdated(entries, details)
+    if updates.can_check_staleness(entries):
+        stale = updates.outdated(entries)
         status["assets"] = {
             "state": "stale" if stale else "ok",
             "items": [describe(item["item_id"]) for item in stale],
-            # Without a key this is Steam's cached view, not a live check.
-            "source": "api" if api_mode else "acf",
+            "source": "acf",
         }
 
     return status
@@ -442,7 +428,7 @@ _TEMPLATE = """<!DOCTYPE html>
     if (status.assets.source === 'acf') {{
       tail.push({{text: (assetsOk ? '' : ' ') +
         'Checked against Steam\\u2019s own record, as of its last sync. ' +
-        'Set an API key for a live check.', muted: true}});
+        'Run wrsrcli update for a live check.', muted: true}});
     }}
     accordion('Asset status', assetsOk, 'OK', 'Update needed',
       assetsOk ? 'All assets are up to date. No further action is needed.'
@@ -626,16 +612,9 @@ _TEMPLATE = """<!DOCTYPE html>
 # them.
 # `link` names the row field holding the id the href is built from, not the
 # cell's own text: the Author column shows a name and links by owner_id.
+# One set of columns: since D-024 every field has a local source, so there
+# is no reduced no-key mode to fall back to.
 COLUMNS = [
-    {"key": "item_id", "label": "Item ID", "cls": "id", "link": "item"},
-    {"key": "name", "label": "Name", "cls": "name"},
-    {"key": "item_type", "label": "Type"},
-    {"key": "tags", "label": "Tags"},
-    {"key": "owner_id", "label": "Owner ID", "cls": "owner", "link": "creator"},
-    {"key": "updated", "label": "Updated", "sort": "updated_sort"},
-]
-
-COLUMNS_API = [
     {"key": "item_id", "label": "Item ID", "cls": "id", "link": "item"},
     {"key": "name", "label": "Name", "cls": "name"},
     {"key": "item_type", "label": "Type"},
@@ -653,21 +632,19 @@ COLUMNS_API = [
 FOLD_COLUMN = {"key": "_fold", "label": "", "cls": "fold"}
 
 
-def columns_for(rows, api_mode):
-    columns = COLUMNS_API if api_mode else COLUMNS
+def columns_for(rows):
     if any(row.get("dependencies") for row in rows):
-        return [FOLD_COLUMN] + columns
-    return columns
+        return [FOLD_COLUMN] + COLUMNS
+    return COLUMNS
 
 
-def render(rows, api_mode=False, status=None):
+def render(rows, status=None):
     generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
-    mode = "" if api_mode else " &middot; local data only (no Steam Web API key set)"
     return _TEMPLATE.format(
         count=len(rows),
         generated=generated,
-        mode=mode,
+        mode="",
         data=_embed(rows),
         status=_embed(status or {"dependencies": None, "assets": None}),
-        columns=_embed(columns_for(rows, api_mode)),
+        columns=_embed(columns_for(rows)),
     )

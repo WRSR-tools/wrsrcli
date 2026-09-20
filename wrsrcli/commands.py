@@ -9,17 +9,12 @@ import sys
 import webbrowser
 from pathlib import Path
 
-from . import __version__, APP_ID, acf, backup, config, downloads, history
+from . import __version__, acf, backup, config, history
 from . import importer, importlist, install, scan, staleness, steam
-from . import steamapi, steamcmd, table, updates
+from . import steamworks, table, updates
 from .errors import WrsrcliError
 
 # Verbatim per SPEC.md 4.2 — do not reword.
-NO_API_KEY_MESSAGE = """Steam Web API key has not been set. To retrieve metadata from Steam, please obtain an API key from:
-   https://steamcommunity.com/dev/apikey
-
-wrsrcli will now build an HTML table of your assets using workshopconfig.ini."""
-
 SAVE_PROMPT = (
     "Please enter path to save folder, or press ENTER to use Documents. "
     "The filename will be WRSR Assets.html: "
@@ -32,11 +27,6 @@ COLLISION_PROMPT = """WRSR Assets.html found. Do you want to:
 Please select: """
 
 OUTPUT_NAME = "WRSR Assets.html"
-
-# Verbatim per SPEC.md 3 — do not reword.
-STEAMCMD_PROMPT = """Press ENTER to automatically download and install steamcmd from Valve. If you prefer to download and install yourself, please open this link:
-   https://developer.valvesoftware.com/wiki/SteamCMD
-"""
 
 # Verbatim per SPEC.md 3 — do not reword. The title line is shown in rust, and
 # in the prompt only the key name is; everything else is plain (D-016, D-017).
@@ -141,30 +131,6 @@ def resolve_workshop_path():
     return resolve_path(config.WORKSHOP_PATH, steam.workshop_path)
 
 
-def cmd_api(args):
-    if args.remove:
-        if args.key:
-            raise WrsrcliError("`api --remove` does not take a key.")
-        if config.remove(config.API_KEY):
-            print("Steam Web API key removed.")
-        else:
-            print("No Steam Web API key was stored.")
-        return 0
-
-    if args.key:
-        config.set_value(config.API_KEY, args.key)
-        print(f"Steam Web API key stored in {config.config_path()}")
-        return 0
-
-    # No key and no --remove: report whether one is stored. The key itself
-    # is never echoed back.
-    if config.get(config.API_KEY):
-        print("A Steam Web API key is stored.")
-    else:
-        print("No Steam Web API key is stored.")
-    return 0
-
-
 def cmd_scan(args):
     workshop_path = resolve_workshop_path()
     acf_path = steam.workshop_acf()
@@ -187,33 +153,31 @@ def cmd_scan(args):
 
 
 def _scan_dependencies(entries):
-    """Attach dependencies to `entries`. Returns a summary line, or None.
+    """Enrich `entries` from Steam. Returns a summary line, or None.
 
-    Dependencies need the Web API and a key. Without one, or when the call
-    fails, the manifest is still written from the local sources — the
-    inventory is the job `scan` cannot fail at (decision D-020).
+    Titles, authors, published dates and dependencies all come from the
+    running Steam client (D-024). With Steam closed the manifest is still
+    written from the local sources — the inventory is the job `scan` cannot
+    fail at.
     """
-    key = config.get(config.API_KEY)
-    if not key:
+    handle, reason = steamworks.connect()
+    if handle is None:
         print(
-            "warning: no Steam Web API key set — dependencies were not "
-            "checked. Set one with `wrsrcli api {key}` and scan again.",
+            f"warning: {reason} — dependencies, authors and published dates "
+            "were not collected. Start Steam and scan again.",
             file=sys.stderr,
         )
         return None
 
     try:
-        declaring, unmet = scan.add_dependencies(entries, key)
-    except WrsrcliError as exc:
-        print(f"warning: {exc}", file=sys.stderr)
-        print(
-            "warning: dependencies were not checked — the manifest is "
-            "otherwise complete.",
-            file=sys.stderr,
-        )
+        declaring, unmet = scan.add_dependencies(entries, handle)
+    except OSError as exc:
+        print(f"warning: Steam did not answer: {exc}", file=sys.stderr)
         for entry in entries:
             entry.pop("dependencies", None)
         return None
+    finally:
+        handle.shutdown()
 
     if not declaring:
         return "No item declares a dependency."
@@ -248,52 +212,15 @@ def _resolve_output(folder):
         print("Please enter 1 or 2.")
 
 
-def _enrich(key, entries):
-    """Fetch Web API metadata. Returns (details, authors, api_mode).
-
-    A failure here degrades to the local-only table rather than aborting a
-    run that can still produce useful output (decision D-007).
-    """
-    item_ids = [e["item_id"] for e in entries if e.get("item_id")]
-    owner_ids = sorted({e["owner_id"] for e in entries if e.get("owner_id")})
-
-    try:
-        details = steamapi.published_file_details(item_ids)
-        authors = steamapi.player_names(key, owner_ids)
-    except WrsrcliError as exc:
-        print(f"warning: {exc}", file=sys.stderr)
-        print(
-            "warning: falling back to local data only — the table will omit "
-            "author name, posted date and file size.",
-            file=sys.stderr,
-        )
-        return None, None, False
-
-    print(
-        f"Retrieved Steam Web API metadata for {len(details)} item(s) and "
-        f"{len(authors)} author(s)."
-    )
-    return details, authors, True
-
-
 def cmd_output_table(args):
-    key = config.get(config.API_KEY)
-    if not key:
-        print(NO_API_KEY_MESSAGE)
-        print()
-
     entries = table.load_manifest()
 
-    details, authors, api_mode = (None, None, False)
-    if key:
-        details, authors, api_mode = _enrich(key, entries)
-
-    rows = table.build_rows(entries, resolve_workshop_path(), details, authors)
-    status = table.build_status(entries, rows, details, api_mode)
+    rows = table.build_rows(entries, resolve_workshop_path())
+    status = table.build_status(entries, rows)
 
     destination = _resolve_output(_prompt_save_folder())
     try:
-        destination.write_text(table.render(rows, api_mode, status), encoding="utf-8")
+        destination.write_text(table.render(rows, status), encoding="utf-8")
     except OSError as exc:
         raise WrsrcliError(f"could not write {destination}: {exc}") from exc
 
@@ -301,144 +228,78 @@ def cmd_output_table(args):
     return 0
 
 
-UPDATE_PROMPT = "Press ENTER to download, or anything else to cancel: "
+UPDATE_PROMPT = "Press ENTER to subscribe, or anything else to cancel: "
 
 
 def cmd_update(args):
-    """Fetch unmet dependencies and out-of-date items (SPEC.md 4.8, D-021)."""
+    """Subscribe to what is missing or out of date (SPEC.md 4.8, D-024)."""
     entries = table.load_manifest()
-    workshop_path = resolve_workshop_path()
-
     missing = updates.unmet(entries)
 
-    details = {}
-    try:
-        details = steamapi.published_file_details(
-            [e["item_id"] for e in entries if e.get("item_id")]
-        )
-    except WrsrcliError as exc:
-        # The .acf's own `latest_timeupdated` still answers this, as of
-        # Steam's last sync, so the check degrades rather than disappearing
-        # (decision D-022).
-        print(f"warning: {exc}", file=sys.stderr)
-        print(
-            "warning: falling back to Steam's own record for update checks.",
-            file=sys.stderr,
-        )
-    stale = updates.outdated(entries, details)
-
-    if not missing and not stale:
-        print("Everything is installed and up to date. Nothing to do.")
-        return 0
-
-    if missing:
-        print(f"Missing dependencies ({len(missing)}):")
-        for dep in missing:
-            needed = ", ".join(dep["required_by"])
-            print(f"   - {dep['item_id']} {dep['name']} — required by {needed}")
-    if stale:
-        print(f"Out of date ({len(stale)}):")
-        for item in stale:
-            print(
-                f"   - {item['item_id']} installed "
-                f"{_stamp(item['local'])}, workshop {_stamp(item['remote'])}"
-            )
-
-    print()
-    print(
-        f"{len(missing) + len(stale)} item(s) will be downloaded through "
-        "SteamCMD into your workshop folder."
-    )
-    if stale:
-        print("Existing copies are backed up first and can be rolled back.")
-    if input(UPDATE_PROMPT).strip():
-        print("Cancelled. Nothing was downloaded.")
-        return 0
-
-    install_path = steam.steam_path() / "steamcmd"
-    if not steamcmd.is_installed(install_path):
+    handle, reason = steamworks.connect()
+    if handle is None:
         raise WrsrcliError(
-            "SteamCMD is not available to download with — run "
-            "`wrsrcli steamcmd --install` first."
+            f"{reason}. Subscribing needs the Steam client running, with this "
+            "account owning Workers & Resources: Soviet Republic."
         )
 
-    wanted = [dep["item_id"] for dep in missing] + [item["item_id"] for item in stale]
+    try:
+        stale = updates.outdated(entries, handle)
 
-    # A missing dependency is not in the manifest, so the earlier lookup —
-    # which covered installed items — never asked about it. Without this its
-    # recorded version would be null and staleness for it unanswerable
-    # forever after (D-022).
-    unknown = [item_id for item_id in wanted if item_id not in details]
-    if unknown:
-        try:
-            details.update(steamapi.published_file_details(unknown))
-        except WrsrcliError as exc:
-            print(f"warning: {exc}", file=sys.stderr)
+        if not missing and not stale:
+            print("Everything is installed and up to date. Nothing to do.")
+            return 0
 
-    # Whichever source said the item was stale is the one that knows which
-    # version is being fetched; without the API that is the .acf's value.
-    remote_versions = {
-        item_id: (details.get(item_id) or {}).get("time_updated") for item_id in wanted
-    }
-    for item in stale:
-        if remote_versions.get(item["item_id"]) is None:
-            remote_versions[item["item_id"]] = str(item["remote"])
+        if missing:
+            print(f"Missing dependencies ({len(missing)}):")
+            for dep in missing:
+                needed = ", ".join(dep["required_by"])
+                print(f"   - {dep['item_id']} {dep['name']} — required by {needed}")
+        if stale:
+            print(f"Out of date ({len(stale)}):")
+            for item in stale:
+                print(f"   - {item['item_id']} {item.get('name') or ''}".rstrip())
 
-    done = failed = 0
-    for item_id in wanted:
-        try:
-            _fetch_into_workshop(
-                item_id, workshop_path, install_path, remote_versions.get(item_id)
-            )
-            done += 1
-        except WrsrcliError as exc:
-            # One item's failure leaves the rest to run; what succeeded is
-            # already recorded and undoable.
-            print(f"warning: {exc}", file=sys.stderr)
-            failed += 1
+        print()
+        print(
+            f"Steam will subscribe to and install {len(missing) + len(stale)} "
+            "item(s), and keep them updated from now on."
+        )
+        if input(UPDATE_PROMPT).strip():
+            print("Cancelled. Nothing was subscribed.")
+            return 0
+
+        wanted = [dep["item_id"] for dep in missing] + [i["item_id"] for i in stale]
+        done, failed = _subscribe_all(handle, wanted)
+    finally:
+        handle.shutdown()
 
     print()
-    print(f"Updated {done} item(s)." + (f" {failed} failed." if failed else ""))
+    print(f"Subscribed to {done} item(s)." + (f" {failed} failed." if failed else ""))
     print("Run `wrsrcli scan` to refresh the manifest.")
-    if missing:
-        print(
-            "Note: Steam does not know about items downloaded this way and "
-            "will not keep them updated. Subscribing in Steam is the durable "
-            "fix."
-        )
     return 0 if not failed else 1
 
 
-def _stamp(value):
-    return datetime.datetime.fromtimestamp(int(value)).strftime("%Y-%m-%d")
-
-
-def _fetch_into_workshop(item_id, workshop_path, install_path, time_updated):
-    """Download `item_id` and put it where the game looks (decision D-021)."""
-    print(f"\nDownloading {item_id} ...")
-    result, downloaded = steamcmd.download_workshop_item(install_path, APP_ID, item_id)
-    if downloaded is None:
-        raise WrsrcliError(
-            f"SteamCMD could not download item {item_id} "
-            f"(exit code {result.returncode})."
-        )
-
-    target = workshop_path / item_id
-    run = backup.Run(item_id)
-    if target.exists():
-        # Replacing something Steam owns: it goes through the backup
-        # mechanism, so `rollback` undoes an update like any import.
-        run.stash_removal(item_id, target)
-
-    try:
-        shutil.move(str(downloaded), str(target))
-    except OSError as exc:
-        raise WrsrcliError(f"could not place item {item_id} in {target}: {exc}") from exc
-
-    run.commit()
-    downloads.record(item_id, time_updated)
-    print(f"Installed to {target}")
-    return target
+def _subscribe_all(handle, item_ids, label="Subscribing to"):
+    """Subscribe and wait for each item to install. Returns (done, failed)."""
+    done = failed = 0
+    for item_id in item_ids:
+        print(f"\n{label} {item_id} ...")
+        handle.subscribe(item_id)
+        bits = handle.wait_until(item_id, steamworks.INSTALLED)
+        if bits & steamworks.INSTALLED:
+            print(f"   installed ({steamworks.describe(bits)})")
+            done += 1
+        else:
+            # Subscribed but not yet on disk is not a failure to report as
+            # success: the caller may be about to copy files out of it.
+            print(
+                f"warning: {item_id} is {steamworks.describe(bits)} — Steam is "
+                "still working on it.",
+                file=sys.stderr,
+            )
+            failed += 1
+    return done, failed
 
 
 def _choose(prompt, count):
@@ -473,38 +334,56 @@ def _resolve_conflicts(conflicts):
     return chosen, skipped
 
 
+def _steamworks_or_fail(purpose):
+    handle, reason = steamworks.connect()
+    if handle is None:
+        raise WrsrcliError(
+            f"{reason}. {purpose} needs the Steam client running, with this "
+            "account owning Workers & Resources: Soviet Republic."
+        )
+    return handle
+
+
 def _ensure_origin_present(item_id, workshop_root, label="Origin item"):
-    """The item's workshop folder, downloading it via SteamCMD if absent."""
+    """The item's workshop folder, subscribing through Steam if absent.
+
+    Subscribing rather than downloading means Steam installs the item into
+    its own workshop folder, records it in the .acf and keeps it updated
+    afterwards — so an import no longer leaves files Steam knows nothing
+    about (decision D-024).
+    """
     folder = workshop_root / item_id
     if folder.is_dir():
         return folder
 
-    install_path = steam.steam_path() / "steamcmd"
-    if not steamcmd.is_installed(install_path):
-        raise WrsrcliError(
-            f"{label.lower()} {item_id} is not installed locally and SteamCMD is not "
-            "available to download it — run `wrsrcli steamcmd --install` first."
-        )
+    print(f"{label} {item_id} is not installed. Subscribing through Steam ...")
+    handle = _steamworks_or_fail("Installing a workshop item")
+    try:
+        handle.subscribe(item_id)
+        bits = handle.wait_until(item_id, steamworks.INSTALLED)
+    finally:
+        handle.shutdown()
 
-    print(f"{label} {item_id} is not installed locally. Downloading via SteamCMD ...")
-    result, downloaded = steamcmd.download_workshop_item(install_path, APP_ID, item_id)
-    if downloaded is None:
+    if not bits & steamworks.INSTALLED:
         raise WrsrcliError(
-            f"SteamCMD could not download item {item_id} "
-            f"(exit code {result.returncode}). Subscribe to it in Steam, or "
-            "download it manually, then re-run this import."
+            f"Steam did not finish installing item {item_id} "
+            f"({steamworks.describe(bits)}). Let it finish, then run this again."
         )
-    print(f"Downloaded to {downloaded}")
-    return downloaded
+    if not folder.is_dir():
+        raise WrsrcliError(
+            f"Steam reports item {item_id} installed, but {folder} does not exist."
+        )
+    print(f"Installed to {folder}")
+    return folder
 
 
 def _resolve_dependencies(entry, workshop_root):
-    """Download an item's dependencies before its own files are touched.
+    """Subscribe to an item's dependencies before its files are touched.
 
-    Mandatory ones come down without asking — the item does not work
+    Mandatory ones are subscribed without asking — the item does not work
     without them. Optional ones are offered one at a time with the list
-    author's message, and ENTER accepts, matching every other download
-    prompt in the tool (D-008, D-018).
+    author's message, and ENTER accepts, matching every other prompt in the
+    tool (D-008, D-018).
     """
     for dependency in entry.mandatory:
         if (workshop_root / dependency.item).is_dir():
@@ -519,7 +398,7 @@ def _resolve_dependencies(entry, workshop_root):
         print(f"   {dependency.message}")
         try:
             answer = input(
-                "Press ENTER to download it, or type anything else to skip: "
+                "Press ENTER to subscribe to it, or type anything else to skip: "
             ).strip()
         except EOFError:
             answer = "skip"
@@ -771,7 +650,7 @@ def first_run():
         + FIRST_RUN_PROMPT_AFTER
     )
 
-    # Only an empty line proceeds, matching `steamcmd --install` (D-008).
+    # Only an empty line proceeds, matching every other prompt (D-008).
     try:
         answer = input(prompt + " ").strip()
     except EOFError:
@@ -840,45 +719,6 @@ def cmd_open_web(args):
         raise WrsrcliError(
             f"could not open a browser. Visit {WEBSITE} yourself instead."
         )
-    return 0
-
-
-def cmd_steamcmd(args):
-    if not args.install:
-        if args.path:
-            raise WrsrcliError("`--path` only applies with `--install`.")
-        print("wrsrcli steamcmd: nothing to do — pass -i/--install.", file=sys.stderr)
-        return 1
-
-    install_path = (
-        Path(args.path).expanduser() if args.path else steam.steam_path() / "steamcmd"
-    )
-
-    if steamcmd.is_installed(install_path):
-        print(f"SteamCMD is already installed at {install_path}")
-        return 0
-
-    print(STEAMCMD_PROMPT)
-    # Only an empty line proceeds; anything else cancels (decision D-008).
-    if input().strip():
-        print("Cancelled — nothing was downloaded.")
-        return 0
-
-    print(f"Downloading SteamCMD from Valve to {install_path} ...")
-    size = steamcmd.install(install_path)
-    print(f"Downloaded and extracted {size:,} bytes.")
-
-    print("Running steamcmd.exe once to let it self-update (this can take a while) ...")
-    result = steamcmd.bootstrap(install_path)
-    if result.returncode not in (0, 7):
-        # 7 is SteamCMD's normal exit after a bare bootstrap on some builds.
-        print(
-            f"warning: steamcmd.exe exited with code {result.returncode} during "
-            "its first run.",
-            file=sys.stderr,
-        )
-
-    print(f"SteamCMD ready at {steamcmd.executable(install_path)}")
     return 0
 
 
