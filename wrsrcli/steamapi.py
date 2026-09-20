@@ -1,16 +1,20 @@
-"""Steam Web API calls used to enrich `output-table` (SPEC.md 4.2).
+"""Steam Web API calls used to enrich `scan` (SPEC.md 4.1) and
+`output-table` (SPEC.md 4.2).
 
-Two endpoints:
+Three endpoints:
 
-- `ISteamRemoteStorage/GetPublishedFileDetails` — per-item file size and
-  posted/updated dates.
+- `ISteamRemoteStorage/GetPublishedFileDetails` — per-item file size,
+  posted/updated dates, title and creator. Needs no key.
 - `ISteamUser/GetPlayerSummaries` — resolves a numeric `owner_id` to the
   author's display name. This one requires the key.
+- `IPublishedFileService/GetDetails` — an item's declared dependencies,
+  as the `children` list. Also requires the key; the keyless endpoint
+  above carries no dependency field at all (decision D-020).
 
 The stored API key is passed to Valve and never printed, logged, or
 included in an error message. Exceptions raised here deliberately carry
 only the endpoint name, never the request URL, because the key travels in
-the query string of the GetPlayerSummaries call.
+the query string of the GetPlayerSummaries and GetDetails calls.
 """
 
 import json
@@ -24,10 +28,16 @@ PUBLISHED_FILE_DETAILS = (
     "https://api.steampowered.com/ISteamRemoteStorage/GetPublishedFileDetails/v1/"
 )
 PLAYER_SUMMARIES = "https://api.steampowered.com/ISteamUser/GetPlayerSummaries/v2/"
+FILE_SERVICE_DETAILS = (
+    "https://api.steampowered.com/IPublishedFileService/GetDetails/v1/"
+)
 
 # Valve caps GetPlayerSummaries at 100 ids per call; the same batch size is
 # comfortable for the file-details POST.
 BATCH = 100
+# GetDetails takes its ids in the query string, so the batch is kept smaller
+# to stay well inside a sane URL length.
+CHILDREN_BATCH = 50
 TIMEOUT = 20
 
 
@@ -83,9 +93,45 @@ def published_file_details(item_ids):
                 "file_size": entry.get("file_size"),
                 "time_created": entry.get("time_created"),
                 "time_updated": entry.get("time_updated"),
+                # Both are needed to name a dependency that is not installed:
+                # it has no local folder to read a title or owner from.
+                "title": entry.get("title"),
+                "creator": entry.get("creator"),
             }
 
     return details
+
+
+def published_file_children(key, item_ids):
+    """{item_id: [child_id, ...]} — the items Steam records as required.
+
+    Only items that declare at least one appear in the mapping. A child's
+    own id is all this returns; titles and creators come from
+    `published_file_details`.
+    """
+    children = {}
+
+    for batch in _chunks(list(item_ids), CHILDREN_BATCH):
+        fields = {"key": key, "includechildren": "true"}
+        for index, item_id in enumerate(batch):
+            fields[f"publishedfileids[{index}]"] = item_id
+
+        query = urllib.parse.urlencode(fields)
+        payload = _request(f"{FILE_SERVICE_DETAILS}?{query}", None, "GetDetails")
+
+        for entry in payload.get("response", {}).get("publishedfiledetails", []):
+            item_id = entry.get("publishedfileid")
+            if not item_id or entry.get("result") not in (1, None):
+                continue
+            listed = [
+                child["publishedfileid"]
+                for child in entry.get("children") or []
+                if child.get("publishedfileid")
+            ]
+            if listed:
+                children[item_id] = listed
+
+    return children
 
 
 def player_names(key, owner_ids):

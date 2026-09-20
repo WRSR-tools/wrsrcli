@@ -44,7 +44,8 @@ given in the same invocation as `-a`.
 ### `wrsrcli api {key}`
 
 Stores a [Steam Web API key](https://steamcommunity.com/dev/apikey), which
-`output-table` uses to fetch author names, posted dates and file sizes.
+`output-table` uses to fetch author names, posted dates and file sizes, and
+`scan` uses to find out which items depend on which.
 
 ```
 wrsrcli api 0123456789ABCDEF0123456789ABCDEF
@@ -72,6 +73,7 @@ an inventory to `%APPDATA%\wrsrcli\manifest.json`.
 ```
 > wrsrcli scan
 Scanned 21 installed item(s) from D:\...\workshop\content\784150
+16 item(s) declare dependencies; 1 not installed: 3773169177
 Manifest written to C:\Users\you\AppData\Roaming\wrsrcli\manifest.json
 ```
 
@@ -82,6 +84,17 @@ those are skipped.
 Every workshop download ships a `workshopconfig.ini`, so if one is missing
 the item was changed locally. That item is still listed, with its owner and
 type left empty, and a warning is printed naming it.
+
+**Dependencies.** Many workshop items require another item to work — a mod
+loader, say. If you have set an API key, `scan` asks Steam which items each
+of yours requires, records them in the manifest, and tells you about any
+that are not installed. In the example above, four mods need TesmioLoader
+and it is not there; those mods are unlikely to be working in-game. Steam
+does not warn you about this anywhere, and nothing local shows it.
+
+Without a key, `scan` works exactly as it always did and says that
+dependencies were not checked. If the API call fails, you get a warning and
+the rest of the manifest is still written.
 
 Re-run `scan` whenever you subscribe to or unsubscribe from anything.
 
@@ -105,6 +118,27 @@ internet, so it keeps working offline, forever, and can be copied anywhere.
 Columns without an API key: Item ID, Name, Type, Tags, Owner ID, Updated.
 With a key, Owner ID is replaced by the author's display name and Posted
 and Size are added.
+
+Item IDs link to the workshop page, and authors to their Steam profile.
+Both open in a new tab. The links are the only thing in the file that
+points outwards, and nothing is loaded from the internet to display it.
+
+Any item with dependencies gets a ▸ button at the start of its row. Open it
+to see what that item needs:
+
+```
+DEPENDENCIES
+- 3787969749 Republic Mod Loader [1.1.1.9] (UltimateUniverse) (OK)
+- 3773169177 TesmioLoader v. b0.3.6 (for WRSR 1.1.1.9) (Tesmio) (Not installed)
+```
+
+`OK` means you have it. **Not installed** is highlighted — that item is
+missing and whatever needs it probably will not work. The IDs and creators
+in the list are links too, so a missing dependency is one click from the
+page you would install it from.
+
+Dependencies come from the manifest, so they still appear when you build a
+table without a key — as long as the scan that wrote the manifest had one.
 
 If Steam's API is unreachable or rejects your key, `output-table` says so
 and falls back to the local-only table rather than failing — you still get
