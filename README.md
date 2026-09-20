@@ -27,7 +27,7 @@ Full instructions, including the `pip` route and how to uninstall, are in
 wrsrcli path --auto-detect     find your game and workshop folders
 wrsrcli scan                   build the asset manifest
 wrsrcli output-table           write a searchable WRSR Assets.html
-wrsrcli update                 fetch missing dependencies and updates
+wrsrcli update                 subscribe to missing deps and updates
 wrsrcli import mylist.yaml     apply an import list, with backups
 ```
 

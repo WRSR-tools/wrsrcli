@@ -5,6 +5,8 @@ Shared by `output-table`, which reports both in its status accordions, and
 the table saying one thing and the command doing another.
 """
 
+from . import steamworks
+
 
 def unmet(entries):
     """Dependencies referenced by an installed item but not installed.
@@ -43,23 +45,20 @@ def _as_int(value):
         return None
 
 
-def outdated(entries, details=None):
-    """Installed items whose published version is newer than the local one.
+def outdated(entries, handle=None):
+    """Installed items with a newer version published.
 
-    Two sources, in order of authority (decision D-022):
+    Two sources (decision D-024):
 
-    - the Steam Web API's `time_updated`, which is live, when `details`
-      carries the item;
-    - otherwise the `.acf`'s own `latest_timeupdated`, which Steam maintains
-      as of its last check. This is what makes the check work with no key
-      and no network.
+    - a connected Steamworks handle, where `GetItemState` reports
+      `NeedsUpdate` — Steam's own live answer, no timestamps involved;
+    - otherwise the `.acf`'s `latest_timeupdated`, captured by `scan` as
+      `date_latest`, which keeps the check working with Steam closed.
 
-    An item is out of date only when both timestamps are readable and the
-    published one is strictly greater. A missing or unparseable value means
-    "no evidence of an update", never "update it", so neither a partial API
-    response nor an .acf without the field can invent work.
+    An item is out of date only on positive evidence. A missing or
+    unreadable value is never read as "update it", so neither a closed Steam
+    client nor an .acf without the field can invent work.
     """
-    details = details or {}
     stale = []
 
     for entry in entries:
@@ -67,33 +66,39 @@ def outdated(entries, details=None):
         if not item_id:
             continue
 
-        local = _as_int(entry.get("date_updated"))
-        remote = _as_int((details.get(item_id) or {}).get("time_updated"))
-        source = "api"
-        if remote is None:
-            remote = _as_int(entry.get("date_latest"))
-            source = "acf"
-
-        if local is None or remote is None or remote <= local:
+        if handle is not None:
+            bits = handle.state(item_id)
+            # An item still downloading is already being dealt with.
+            if bits & steamworks.NEEDS_UPDATE and not bits & (
+                steamworks.DOWNLOADING | steamworks.DOWNLOAD_PENDING
+            ):
+                stale.append({
+                    "item_id": item_id,
+                    "name": entry.get("title") or "",
+                    "source": "steam",
+                })
             continue
 
-        stale.append(
-            {
-                "item_id": item_id,
-                "local": local,
-                "remote": remote,
-                "source": source,
-            }
-        )
+        local = _as_int(entry.get("date_updated"))
+        remote = _as_int(entry.get("date_latest"))
+        if local is None or remote is None or remote <= local:
+            continue
+        stale.append({
+            "item_id": item_id,
+            "name": entry.get("title") or "",
+            "local": local,
+            "remote": remote,
+            "source": "acf",
+        })
 
     return stale
 
 
-def can_check_staleness(entries, api_mode=False):
-    """Whether anything can say if an item is out of date.
+def can_check_staleness(entries):
+    """Whether anything on disk can say if an item is out of date.
 
-    With a key the API answers for every item; without one it takes an .acf
-    that carried `latest_timeupdated`. Neither means the Asset status panel
-    is absent rather than claiming everything is current (D-022).
+    Needs an .acf that carried `latest_timeupdated` into the manifest. With
+    nothing to check against, the Asset status panel is absent rather than
+    claiming everything is current (D-022, D-024).
     """
-    return bool(api_mode) or any(entry.get("date_latest") for entry in entries)
+    return any(entry.get("date_latest") for entry in entries)

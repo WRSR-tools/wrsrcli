@@ -94,7 +94,7 @@ Some assets only work alongside others. An entry can say so:
 ```
 
 Anything already in your workshop folder is left alone. Anything missing
-is fetched through SteamCMD — mandatory ones without asking, since the
+is subscribed to through Steam — mandatory ones without asking, since the
 item does not work without them, and optional ones one at a time:
 
 ```
@@ -146,8 +146,8 @@ Backed up 3 original(s) to C:\Users\you\AppData\Roaming\wrsrcli\backups\37807392
 ```
 
 If the origin item is not installed locally, `wrsrcli` offers to fetch it
-through SteamCMD first — see `wrsrcli steamcmd --install` in
-[Use.md](Use.md).
+through Steam first: wrsrcli subscribes to it and waits for Steam to
+finish installing it.
 
 A `remove` target that is already gone is reported as a warning and does
 not stop the run.

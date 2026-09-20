@@ -14,41 +14,22 @@ one exception, described here and summarised in [NOTICE](NOTICE).
 | **SHA-256** | `e6d9bafb9a41e42fba7b21553db49f8719027af3f0deb23ff86cfc44d60e776d` |
 | **Licence** | [Steamworks SDK Access Agreement](https://partner.steamgames.com/documentation/sdk_access_agreement) |
 
-**This file is not covered by the Apache License 2.0.** It is Valve
-Corporation's software, redistributed under section 1.1(b) of the Steamworks
-SDK Access Agreement, which permits reproducing and distributing the SDK's
-`redistributable_bin` contents along with the software built against them.
+**This file is not covered by the Apache License 2.0.** It belongs to Valve
+Corporation's software and is redistributed under section 1.1(b) of the Steamworks
+SDK Access Agreement.
 
-The agreement's text is not reproduced here. Read it at the link above.
+### Purpose
 
-### Why it is here
+`wrsrcli update` and `wrsrcli import` requires `steam_api.dll` to subscribe to/unsubscribe from items.
 
-`wrsrcli update` and `wrsrcli import` can subscribe to Steam Workshop items
-on the user's behalf, through `ISteamUGC::SubscribeItem`. A subscription is
-what makes Steam install an item and keep it updated, and it is the only
-route that leaves Steam's own records correct. Section 2.4 of the agreement
-requires that software interacting with Steamworks Services do so through
-the API provided by the SDK Redistributables rather than by communicating
-with those services directly, so this library is the sanctioned way to do
-it, not a shortcut around one.
+### If you fork or redistribute `wrsrcli`
 
-Everything else in wrsrcli works without it. Where it is absent or fails to
-load, the affected commands open the item's Steam page instead, and the user
-subscribes with one click.
+Section 6.2 of the Steamworks agreement bars assignment of any rights to you. If you fork or redistribute this software, you must acceept the Steamworks SDK Access Agreement.
 
-### If you fork or redistribute wrsrcli
-
-The Apache License over the rest of this work grants you nothing in this
-file, and section 6.2 of the Steamworks agreement bars assignment. Your
-right to redistribute it rests on your own acceptance of the Steamworks SDK
-Access Agreement, which you accept by downloading the SDK from Valve.
-
-If you would rather not rely on that, delete the file. wrsrcli detects its
-absence and degrades as described above; nothing else changes.
+If you cannot accept that, delete the file.
 
 ### Trademarks
 
-Section 2.3 grants no rights in Valve's trademarks or trade names. wrsrcli
-is not affiliated with, endorsed by, or a partner of Valve Corporation.
+`wrsrcli`is not affiliated with, endorsed by, or a partner of Valve Corporation.
 "Steam", "Steamworks" and "Steam Workshop" are used only to describe what
 this tool interoperates with.

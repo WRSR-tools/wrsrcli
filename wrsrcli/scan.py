@@ -12,7 +12,7 @@ complete (decision D-020).
 
 import json
 
-from . import acf, config, downloads, steam, steamapi, workshopconfig
+from . import acf, config, steam, steamworks, workshopconfig
 from .errors import WrsrcliError
 
 OWNER_ID = "$OWNER_ID"
@@ -66,18 +66,17 @@ def build(workshop_path, acf_path):
 
 
 def _folder_only(workshop_path, known, warnings):
-    """Installed items the .acf does not mention (decision D-021).
+    """Installed items the .acf does not mention.
 
-    `wrsrcli update` places items Steam has no record of, so the .acf alone
-    would report them missing forever. Their installed-version timestamp
-    comes from our own download record, since Steam keeps none.
+    Since D-024 nothing wrsrcli does places files outside Steam, so a folder
+    Steam has no record of was put there by something else. It is still
+    inventoried — it is on disk and the game will load it — but it is always
+    warned about, and Steam will neither update it nor know it exists.
     """
     if not workshop_path.is_dir():
         return []
 
-    placed = downloads.load()
     extra = []
-
     for folder in sorted(workshop_path.iterdir()):
         if not folder.is_dir() or not folder.name.isdigit() or folder.name in known:
             continue
@@ -89,70 +88,90 @@ def _folder_only(workshop_path, known, warnings):
             owner_id = workshopconfig.first(record, OWNER_ID)
             item_type = workshopconfig.first(record, ITEM_TYPE)
 
-        known_download = placed.get(folder.name)
-        if known_download is None:
-            # Not ours, and not Steam's either. Worth saying so — the old
-            # code passed over these in silence.
-            warnings.append(
-                f"{folder.name} is installed on disk but absent from Steam's "
-                ".acf, and wrsrcli did not download it"
-            )
-
+        warnings.append(
+            f"{folder.name} is on disk but Steam has no record of it — it was "
+            "not installed through Steam, so it will never be updated. "
+            "Subscribe to it to put that right."
+        )
         extra.append(
             {
                 "item_id": folder.name,
                 "owner_id": owner_id,
                 "item_type": item_type,
-                "date_updated": (known_download or {}).get("time_updated"),
+                "date_updated": None,
                 "date_touched": None,
-                # Steam has no record of these at all, so it knows of no
-                # newer version either; only the API can say (D-022).
-                "date_latest": None,
             }
         )
 
     return extra
 
 
-def add_dependencies(entries, key):
+def add_dependencies(entries, handle):
     """Attach Steam's declared required items to each entry, in place.
 
-    Sets `dependencies` on every entry — an empty list where the item
-    declares none — so a manifest that went through this step is
-    distinguishable from one written without a key, which has no such key
-    at all. Whether a dependency is *installed* is deliberately not stored;
-    it is derived from the manifest's own entries at render time (D-020).
+    `handle` is a connected `steamworks.Steamworks`. Sets `dependencies` on
+    every entry — empty where an item declares none — so a manifest built
+    with Steam running is distinguishable from one built without it, which
+    has no such key at all.
 
-    Returns the number of dependency-declaring items and the set of
-    unmet dependency ids.
+    Whether a dependency is *installed* is deliberately not stored; it is
+    derived from the manifest's own entries at render time (D-020).
+
+    Returns the number of dependency-declaring items and the set of unmet
+    dependency ids.
     """
     item_ids = [entry["item_id"] for entry in entries if entry.get("item_id")]
-    children = steamapi.published_file_children(key, item_ids)
+    published = handle.details(item_ids)
 
-    referenced = sorted({cid for listed in children.values() for cid in listed})
-    # The dependency's own metadata: an unmet one has no folder on disk, so
-    # the API is the only place its name and creator can come from.
-    meta = steamapi.published_file_details(referenced) if referenced else {}
-    creators = sorted(
-        {m["creator"] for m in meta.values() if m.get("creator")}
-    )
-    names = steamapi.player_names(key, creators) if creators else {}
+    referenced = sorted({
+        child
+        for record in published.values()
+        for child in record["children"]
+    })
+    # A dependency need not be installed, so its own record is fetched too:
+    # nothing on disk can name it.
+    if referenced:
+        published.update(handle.details([i for i in referenced if i not in published]))
+
+    # Every owner in play, so the table can name authors with Steam closed.
+    names = handle.persona_names({
+        record["owner_id"] for record in published.values() if record.get("owner_id")
+    })
 
     installed = set(item_ids)
+    declaring = 0
     for entry in entries:
-        listed = children.get(entry.get("item_id"), [])
+        record = published.get(entry.get("item_id"))
+        children = record["children"] if record else []
+        if children:
+            declaring += 1
         entry["dependencies"] = [
             {
-                "item_id": cid,
-                "name": (meta.get(cid) or {}).get("title") or "",
-                "creator_id": (meta.get(cid) or {}).get("creator") or "",
-                "creator": names.get((meta.get(cid) or {}).get("creator") or "", ""),
+                "item_id": child,
+                "name": (published.get(child) or {}).get("title") or "",
+                "creator_id": (published.get(child) or {}).get("owner_id") or "",
+                "creator": names.get(
+                    (published.get(child) or {}).get("owner_id") or "", ""
+                ),
             }
-            for cid in listed
+            for child in children
         ]
+        # Steam's own metadata also fills in what the local files cannot.
+        if record:
+            entry["title"] = record["title"]
+            entry["date_published"] = record["created"]
+            if not entry.get("owner_id"):
+                entry["owner_id"] = record["owner_id"]
+            entry["author"] = names.get(entry.get("owner_id") or "", "")
+        # Size comes from the client's own install record rather than the
+        # published metadata: it is what is actually on this disk, and it
+        # needs no struct offsets to read.
+        info = handle.install_info(entry.get("item_id"))
+        if info:
+            entry["size_on_disk"] = str(info[0])
 
-    unmet = {cid for cid in referenced if cid not in installed}
-    return len(children), unmet
+    unmet = {child for child in referenced if child not in installed}
+    return declaring, unmet
 
 
 def write_manifest(entries):

@@ -37,7 +37,7 @@ wrsrcli --help
 ```
 
 **Only ENTER installs.** Type anything at all before pressing ENTER and
-nothing is installed, the same rule `wrsrcli steamcmd --install` follows.
+nothing is installed, the same rule every prompt in wrsrcli follows.
 The executable works fine run directly from wherever it sits; it only needs
 installing so that `wrsrcli` resolves from any folder.
 
@@ -117,7 +117,7 @@ lives in `%APPDATA%\wrsrcli\`:
 
 | File or folder  | What it holds                                       |
 |-----------------|-----------------------------------------------------|
-| `config.json`   | Your Steam Web API key and your game/workshop paths |
+| `config.json`   | Your game and workshop folder paths |
 | `manifest.json` | The asset inventory that `scan` writes              |
 | `backups.json`  | A record of every file an import overwrote or removed |
 | `backups\`      | The backed-up files themselves                      |

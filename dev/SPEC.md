@@ -11,8 +11,10 @@ implementation — implement around them or stop and ask.
 
 ## 1. Scope and non-goals
 
-- Windows only for v1. No SteamCMD-free downloading — all downloads go
-  through SteamCMD.
+- Windows only for v1. Installing workshop items means **subscribing**
+  through the running Steam client, via Valve's Steamworks SDK
+  redistributable (decision D-024). wrsrcli never downloads workshop
+  content itself and never handles Steam credentials.
 - No file-watching / background daemon. Every command runs once, on
   demand, and exits.
 
@@ -83,7 +85,8 @@ Notes:
 - `$ITEM_DESC` is a multi-line, quoted, BBCode-formatted block.
 - `$OWNER_ID` is numeric only — no display name available locally.
 - **Not present:** author display name, file size, posted date, updated
-  date. These require the Steam Web API.
+  date. `scan` collects these from the running Steam client and stores
+  them in the manifest (§4.1, D-024).
 - **OPEN:** meaning of numeric `$TAGS` values (e.g. `2`, `13`) is not yet
   known. v1 displays raw tag values as-is; a human-readable mapping is
   deferred to a later version.
@@ -93,20 +96,10 @@ Notes:
 ## 3. Configuration and state
 
 All persistent local state lives in `%APPDATA%\wrsrcli\` — **never** inside
-the project repository. This includes `config.json` (API key, workshop
-path, game path), the backup manifest, and `downloads.json` — the record
-of what `update` has placed on disk and at which workshop version, which
-exists because Steam keeps no `.acf` entry for those items (decision
-D-021). Because this lives outside the repo, it never needs `.gitignore`
-handling.
-
-### `wrsrcli api {key}`
-
-Sets the Steam Web API key. Overwrites any existing key.
-
-### `wrsrcli api -r` / `wrsrcli api --remove`
-
-Removes the stored API key.
+the project repository. This includes `config.json` (workshop
+path, game path) and the backup manifest. Because this lives outside the
+repo, it never needs `.gitignore` handling. There is no stored API key:
+since D-024 all Steam data comes from the running client.
 
 ### `wrsrcli path -g "{path}"` / `wrsrcli path --game "{path}"`
 
@@ -166,7 +159,7 @@ For more information on how to use this tool, please visit:
   the console has been confirmed to handle ANSI escapes, and is suppressed
   when `NO_COLOR` is set or output is not a terminal. See decisions D-016 and
   D-017.
-- **Only an empty line (ENTER) proceeds**, matching `steamcmd --install`
+- **Only an empty line (ENTER) proceeds**, matching every other prompt
   (D-008). Any other input cancels and nothing is installed.
 - On ENTER the behaviour is exactly `wrsrcli install`'s: the executable is
   copied to the default directory and that directory is added to the user
@@ -200,30 +193,6 @@ its folder back off the user PATH.
   the user a file an import overwrote.
 
 See decision D-015, which supersedes D-014's exclusion of an uninstall path.
-
-### `wrsrcli steamcmd -i` / `wrsrcli steamcmd --install`
-
-Installs SteamCMD. Default install location: `[STEAMPATH]/steamcmd`. An
-alternate path is given with `-p "{path}"` / `--path "{path}"` (decision
-D-008); the directory is created if it does not exist. `-p` without `-i`
-is a usage error.
-
-On running, prints, verbatim:
-
-```
-Press ENTER to automatically download and install steamcmd from Valve. If you prefer to download and install yourself, please open this link:
-   https://developer.valvesoftware.com/wiki/SteamCMD
-```
-
-- **Only an empty line (ENTER) proceeds.** Any other input cancels and
-  nothing is downloaded (decision D-008).
-- On ENTER: `wrsrcli` downloads the official SteamCMD zip from Valve,
-  extracts it to the install path, and runs `steamcmd.exe` once (which
-  self-bootstraps/updates on first run). This is the only place in the
-  tool that downloads and executes third-party code automatically, and it
-  is always gated behind this explicit confirmation.
-- No separate "manual install" code path is needed — the printed link is
-  the manual option, handled outside `wrsrcli` entirely.
 
 ---
 
@@ -268,30 +237,30 @@ installed workshop item, as a JSON array:
   are stored as the raw Unix timestamp strings the `.acf` holds;
   formatting is left to `output-table`.
 - There is deliberately no `date_created`: no creation date exists in any
-  local source. The item's posted date comes from the Steam Web API
-  (§4.2, Phase 5). See decision D-004.
+  local source. The item's posted date comes from Steam, collected by
+  `scan` as `date_published` (D-024). See decision D-004.
 - `owner_id` and `item_type` are **nullable**. They come from
   `workshopconfig.ini`; if that file has been deleted locally the entry is
   still written, with those two fields null and a warning naming the item.
   See decision D-005.
 - `dependencies` is the item's Steam-declared **required items**, one
-  object each, empty where the item declares none. It is the only field
-  not sourced locally: dependencies exist solely in
-  `IPublishedFileService/GetDetails` (`includechildren=true`), which
-  requires the API key — the keyless endpoint used elsewhere carries no
-  dependency field at all. `name`, `creator_id` and `creator` are stored
+  object each, empty where the item declares none, read from
+  `ISteamUGC` (D-024). `name`, `creator_id` and `creator` are stored
   because an unmet dependency has no local folder to read them from.
   Whether a dependency is *installed* is deliberately **not** stored; it
   is derived at render time from the manifest's own entries, so the two
   cannot disagree. See decision D-020.
+- `title`, `author`, `date_published` and `size_on_disk` likewise come from
+  Steam and are written here so that `output-table` needs neither Steam nor
+  a network. `title` and `author` also fill in an item whose
+  `workshopconfig.ini` was deleted locally, which D-005 could only leave
+  blank.
 - "Installed" means the `.acf` **or** a numeric folder in the workshop
-  directory. The `.acf` remains the primary source; folders it does not
-  mention are added afterwards, because items placed by `update` (§4.8)
-  have no `.acf` entry and would otherwise stay invisible to the tool that
-  reported them missing. A folder-only item takes its `date_updated` from
-  `downloads.json` (§3) and has a null `date_touched`; one wrsrcli did not
-  place is additionally warned about. See decision D-021.
-- With no key stored, or if the API call fails, the field is **absent**
+  directory. Since D-024 nothing wrsrcli does puts files outside Steam, so
+  a folder Steam has no record of was placed by something else: it is still
+  inventoried, and always warned about, naming the consequence — Steam will
+  never update it.
+- With Steam not running, the enrichment fields are **absent**
   and the rest of the manifest is written as normal, with a warning. The
   local inventory is the job `scan` does not fail at. A scan that did
   reach the API also reports how many items declare dependencies and
@@ -305,25 +274,11 @@ embedded as JSON, vanilla JS for search/filter/sort (no external
 framework/CDN dependency, since the output file must work standalone,
 indefinitely, with no network access).
 
-**Step 1 — API key check.** If no Steam Web API key is stored, print,
-verbatim:
-
-```
-Steam Web API key has not been set. To retrieve metadata from Steam, please obtain an API key from:
-   https://steamcommunity.com/dev/apikey
-
-wrsrcli will now build an HTML table of your assets using workshopconfig.ini.
-```
-
-Then proceed using only locally available data (§2.2): Item ID, folder
-name, `$ITEM_NAME`, `$ITEM_TYPE`, `$TAGS` (raw values), `$OWNER_ID`
-(numeric only, no resolved name), plus `.acf`-derived dates. No file size,
-no resolved author name, no separately-sourced posted date.
-
-If an API key **is** set, additionally query the Steam Web API
-(`ISteamRemoteStorage/GetPublishedFileDetails` for item metadata including
-file size and posted/updated dates; `ISteamUser/GetPlayerSummaries` to
-resolve `owner_id` to a display name) and include those enriched fields.
+**Step 1 — nothing to check.** Since D-024 every column has a local
+source: `workshopconfig.ini` for the display name and tags, and the
+manifest for the title, author, published date, size and dependencies that
+`scan` collected from Steam. `output-table` makes no network call and needs
+no Steam client, so there is no key prompt and no reduced mode.
 
 **Step 2 — save location.** Prompt, verbatim:
 
@@ -346,15 +301,13 @@ Please select:
   YYYY-MM-DD HH-mm.html`.
 
 **Table columns:** Item ID, Name (`$ITEM_NAME` — see decision D-006; the
-folder name is not shown separately, because folder names *are* item IDs),
-Item Type (category) / raw `$TAGS` values (subcategory — meaning not yet
-mapped, see §2.2), Owner ID, Updated date. In API mode, additionally:
-Author name (replacing Owner ID), Posted date, File size.
+folder name is not shown separately, because folder names *are* item IDs;
+falling back to Steam's title where the config file was deleted), Item Type
+(category), raw `$TAGS` values (subcategory — meaning not yet mapped, see
+§2.2), Author, Posted date, Updated date, Size on disk.
 
-In no-API mode the Author name, Posted date and File size columns are
-omitted rather than rendered empty — this section's own no-API data list
-gives no local source for any of them ("No file size, no resolved author
-name, no separately-sourced posted date").
+One column set, always. The two-mode rendering went with the Web API in
+D-024.
 
 **Links.** The Item ID cell links to the item's workshop page
 (`https://steamcommunity.com/sharedfiles/filedetails/?id={item_id}`), and
@@ -386,11 +339,11 @@ Run `wrsrcli update` to download all dependencies.
 ```
 
 `Asset status (OK)` / `(Update needed)` compares the installed version
-against the newest published one. That comparison uses the Web API's
-`time_updated` where available and the `.acf`'s own `latest_timeupdated`
-otherwise, so it works with no key (D-022). Where neither source can answer
-— an old manifest, or an item only `update` placed — the accordion is
-**absent** rather than claiming everything is current:
+against the newest published one, using the `.acf`'s own
+`latest_timeupdated` as captured by `scan` (D-022). `update` itself asks
+Steam directly instead (D-024). Where the manifest carries no
+`date_latest`, the accordion is **absent** rather than claiming everything
+is current:
 
 ```
 All assets are up to date. No further action is needed.
@@ -402,10 +355,10 @@ The following items need to be updated:
 Run `wrsrcli update` to update.
 ```
 
-When the answer came from the `.acf` rather than the API, the panel adds,
-in muted text: "Checked against Steam's own record, as of its last sync.
-Set an API key for a live check." Steam's cached view is worth acting on,
-but it is not a live check and is not presented as one.
+The panel adds, in muted text: "Checked against Steam's own record, as of
+its last sync. Run `wrsrcli update` for a live check." Steam's cached view is
+worth acting on, but it is not a live check and is not presented as one —
+`wrsrcli update` asks Steam directly.
 
 Both lists link the item id, the name and the creator. The Updated column
 shows the **installed** version's date, not the workshop's — showing the
@@ -503,10 +456,11 @@ See decision D-018.
 Each item in `items` is processed in turn, in file order. One item is one
 backup generation. For each item:
 
-1. Resolve `depends-mandatory`, then `depends-optional`, downloading via
-   SteamCMD anything not already installed.
+1. Resolve `depends-mandatory`, then `depends-optional`, subscribing
+   through Steam to anything not already installed and waiting for it to
+   finish installing (D-024).
 2. Check whether the origin item (`item:` field) is already present
-   locally. If not, download it via SteamCMD first.
+   locally. If not, subscribe to it first and wait for the install.
 3. Execute all `copy` operations.
 4. Execute all `remove` operations.
 5. Every file touched by `copy` (overwritten) or `remove` (taken away) is
@@ -577,50 +531,39 @@ tracked backup entry for staleness and flags candidates for
 
 ### 4.8 `wrsrcli update`
 
-Downloads everything the inventory says is needed: dependencies referenced
-by an installed item but not installed, and items whose workshop version is
-newer than the installed one. Reads `manifest.json`; run `scan` first.
+Subscribes to everything the inventory says is needed: dependencies
+referenced by an installed item but not installed, and items with a newer
+version published. Reads `manifest.json`; run `scan` first.
 
 **Which items qualify.**
 
-- *Missing dependencies* come from the manifest's `dependencies` (§4.1) and
-  need no API call.
-- *Out of date* means the newest published version is **strictly greater**
-  than the installed `date_updated`. The newest version is the API's
-  `time_updated` where available, else the manifest's `date_latest` from
-  the `.acf` (§2.1, D-022), so the check works with no key. The fallback is
-  per item: a partial API response leaves the rest on the `.acf` rather
-  than reporting them current. Equal timestamps and unreadable values both
-  mean up to date — nothing invents work.
-- Items to be fetched that the manifest does not describe — a missing
-  dependency — are looked up before downloading, so the version recorded
-  in `downloads.json` is never null and staleness stays answerable for
-  them afterwards.
+- *Missing dependencies* come from the manifest's `dependencies` (§4.1).
+- *Out of date* is `ISteamUGC::GetItemState` reporting `NeedsUpdate` —
+  Steam's own answer, with no timestamps compared. An item already
+  downloading is not reported, since it is being dealt with.
 
-**Prompt.** Everything to be fetched is listed first, then:
+**Prompt.** Everything to be subscribed is listed first, then:
 
 ```
-Press ENTER to download, or anything else to cancel:
+Press ENTER to subscribe, or anything else to cancel:
 ```
 
-Only ENTER proceeds, matching `steamcmd --install` (D-008). This is the
-explicit opt-in AGENTS.md requires before any download.
+Only ENTER proceeds. Subscribing changes the user's Steam account, so it is
+the action AGENTS.md's opt-in rule now guards.
 
-**Where files go.** SteamCMD fetches into its own tree, and `update` then
-moves the item into `steamapps/workshop/content/784150/{id}/`, where the
-game looks. Replacing an existing item goes through
-`backup.Run.stash_removal` first, keyed on that item id, so `rollback`
-undoes an update exactly as it undoes an import. A newly added dependency
-overwrites nothing and is simply placed. Each item is its own backup
-generation, so a failure part-way leaves what already succeeded recorded
-and undoable; one item's failure is reported and the rest continue, and the
-command exits non-zero if any failed.
+**What happens.** `ISteamUGC::SubscribeItem` per item, then callbacks are
+pumped until Steam reports the item installed or a timeout elapses.
+Subscribing is acknowledged immediately and downloaded afterwards, so
+reporting success on the call alone would claim an install that has not
+happened. An item that does not reach `Installed` is reported with the
+state it did reach, and the command exits non-zero.
 
-**Afterwards.** The fetched version is recorded in `downloads.json` (§3),
-and the user is told to re-run `scan`. Steam has no record of items placed
-this way: it will not update them, and a Steam-side verify may remove them.
-The command says so, because subscribing in Steam remains the durable fix.
-See decision D-021.
+Steam installs into its own workshop folder, writes the `.acf` entry and
+keeps the item updated from then on. Nothing is backed up because nothing
+is overwritten. Afterwards the user is told to re-run `scan`.
+
+Requires the Steam client running, with the signed-in account owning the
+game. See decision D-024.
 
 ## 5. Backup manifest
 

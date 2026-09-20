@@ -7,9 +7,14 @@ Instructions for AI coding agents working in this repository.
 `wrsrcli` is a Windows command-line tool for managing Steam Workshop assets
 for *Workers & Resources: Soviet Republic* (WRSR, Steam app ID 784150). It
 scans the local workshop folder, builds a JSON manifest of installed assets,
-renders a searchable HTML overview, and can apply user-authored "import
+renders a searchable HTML overview, subscribes to missing dependencies and
+out-of-date items through Steam itself, and can apply user-authored "import
 lists" that copy/remove files into the game or into other workshop items'
 folders (with backup/restore/rollback).
+
+Steam is reached through Valve's Steamworks SDK redistributable, bundled at
+`wrsrcli/vendor/steamworks/` and **not** covered by this repo's Apache
+licence — see NOTICE and THIRD-PARTY-NOTICES.md before touching it.
 
 Full behavioral spec: see `dev/SPEC.md`. Build order: see
 `dev/EXECUTION-PLAN.md`. Current status: see `dev/Progress.md`. The
@@ -56,18 +61,18 @@ changes, not just before writing new code.
 
 ## Security-relevant rules — do not violate these
 
-- **Never commit or hardcode the Steam Web API key**, anywhere, in any
-  file in this repo — not even as an example or placeholder that looks
-  real. It is supplied by each user via `wrsrcli api {key}` and stored in
-  `%APPDATA%\wrsrcli\config.json`, outside the repo entirely.
 - **Never write code that performs a hard delete** of a file that
   `import`/`copy`/`remove` operations touch. Every overwrite or removal
   must go through the backup mechanism described in `SPEC.md` first.
-- **SteamCMD and file downloads are the only network/subprocess actions
-  a user must explicitly opt into** (`wrsrcli steamcmd --install` shows a
-  confirmation prompt before downloading anything). Don't add other
-  automatic downloads or subprocess execution without an equivalent,
-  explicit user-facing prompt.
+- **Subscribing on the user's behalf must be explicitly opted into**
+  (`wrsrcli update` lists every item and waits for ENTER). Subscribing
+  changes the user's Steam account, so it is the action this rule now
+  guards, in place of the SteamCMD downloads removed in D-024. Don't add
+  automatic downloads, subscriptions or subprocess execution without an
+  equivalent, explicit user-facing prompt.
+- **Never commit or hardcode a Steam account credential**, and never ask
+  for one. wrsrcli acts through the running Steam client, which already
+  holds the user's session; it has no business handling passwords.
 
 ## Development record-keeping
 
@@ -94,7 +99,7 @@ so rather than quietly bringing one into line with the other.
 
 - Command-line interface: one subcommand per verb (`scan`, `output-table`,
   `update`, `import`, `restore`, `rollback`, `manual-rerun`, `manual-check`,
-  `api`, `path`, `install`, `uninstall`, `open-web`, `steamcmd`), matching the
+  `path`, `install`, `uninstall`, `open-web`), matching the
   definitions in `SPEC.md`. Adding a verb means updating this list and
   `SPEC.md` in the same change — `install` and `uninstall` were both
   implemented before either was recorded (see D-015).
