@@ -43,31 +43,57 @@ def _as_int(value):
         return None
 
 
-def outdated(entries, details):
-    """Installed items whose workshop version is newer than the local one.
+def outdated(entries, details=None):
+    """Installed items whose published version is newer than the local one.
 
-    `details` is `steamapi.published_file_details` output. An item is out of
-    date only when both timestamps are readable and the remote one is
-    strictly greater — a missing or unparseable value means "no evidence of
-    an update", never "update it", so a partial API response cannot invent
-    work.
+    Two sources, in order of authority (decision D-022):
+
+    - the Steam Web API's `time_updated`, which is live, when `details`
+      carries the item;
+    - otherwise the `.acf`'s own `latest_timeupdated`, which Steam maintains
+      as of its last check. This is what makes the check work with no key
+      and no network.
+
+    An item is out of date only when both timestamps are readable and the
+    published one is strictly greater. A missing or unparseable value means
+    "no evidence of an update", never "update it", so neither a partial API
+    response nor an .acf without the field can invent work.
     """
+    details = details or {}
     stale = []
 
     for entry in entries:
         item_id = entry.get("item_id")
         if not item_id:
             continue
+
         local = _as_int(entry.get("date_updated"))
         remote = _as_int((details.get(item_id) or {}).get("time_updated"))
+        source = "api"
+        if remote is None:
+            remote = _as_int(entry.get("date_latest"))
+            source = "acf"
+
         if local is None or remote is None or remote <= local:
             continue
+
         stale.append(
             {
                 "item_id": item_id,
                 "local": local,
                 "remote": remote,
+                "source": source,
             }
         )
 
     return stale
+
+
+def can_check_staleness(entries, api_mode=False):
+    """Whether anything can say if an item is out of date.
+
+    With a key the API answers for every item; without one it takes an .acf
+    that carried `latest_timeupdated`. Neither means the Asset status panel
+    is absent rather than claiming everything is current (D-022).
+    """
+    return bool(api_mode) or any(entry.get("date_latest") for entry in entries)

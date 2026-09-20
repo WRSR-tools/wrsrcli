@@ -311,22 +311,21 @@ def cmd_update(args):
 
     missing = updates.unmet(entries)
 
-    stale = []
+    details = {}
     try:
         details = steamapi.published_file_details(
             [e["item_id"] for e in entries if e.get("item_id")]
         )
-        stale = updates.outdated(entries, details)
     except WrsrcliError as exc:
-        # Dependencies come from the manifest, so the command can still do
-        # half its job without the API.
+        # The .acf's own `latest_timeupdated` still answers this, as of
+        # Steam's last sync, so the check degrades rather than disappearing
+        # (decision D-022).
         print(f"warning: {exc}", file=sys.stderr)
         print(
-            "warning: could not check for newer versions — only missing "
-            "dependencies will be handled.",
+            "warning: falling back to Steam's own record for update checks.",
             file=sys.stderr,
         )
-        details = {}
+    stale = updates.outdated(entries, details)
 
     if not missing and not stale:
         print("Everything is installed and up to date. Nothing to do.")
@@ -364,9 +363,26 @@ def cmd_update(args):
         )
 
     wanted = [dep["item_id"] for dep in missing] + [item["item_id"] for item in stale]
+
+    # A missing dependency is not in the manifest, so the earlier lookup —
+    # which covered installed items — never asked about it. Without this its
+    # recorded version would be null and staleness for it unanswerable
+    # forever after (D-022).
+    unknown = [item_id for item_id in wanted if item_id not in details]
+    if unknown:
+        try:
+            details.update(steamapi.published_file_details(unknown))
+        except WrsrcliError as exc:
+            print(f"warning: {exc}", file=sys.stderr)
+
+    # Whichever source said the item was stale is the one that knows which
+    # version is being fetched; without the API that is the .acf's value.
     remote_versions = {
         item_id: (details.get(item_id) or {}).get("time_updated") for item_id in wanted
     }
+    for item in stale:
+        if remote_versions.get(item["item_id"]) is None:
+            remote_versions[item["item_id"]] = str(item["remote"])
 
     done = failed = 0
     for item_id in wanted:

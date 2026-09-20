@@ -34,7 +34,11 @@ implementation — implement around them or stop and ask.
   - `.acf` has two blocks over the same item IDs:
     - `WorkshopItemsInstalled` — has `size`, `timeupdated`, `manifest` per item.
     - `WorkshopItemDetails` — has `timeupdated`, `timetouched`,
-      `subscribedby`, `manifest` per item; **no** `size`.
+      `subscribedby`, `manifest` per item; **no** `size`. It also carries
+      `latest_timeupdated` and `latest_manifest` — Steam's own record of
+      the newest published version it knows of, as of `TimeLastFullCheck`.
+      Comparing `timeupdated` against `latest_timeupdated` answers "is this
+      out of date" with no API call (decision D-022).
   - An item present in `WorkshopItemDetails` but **not** in
     `WorkshopItemsInstalled` is subscribed-but-not-downloaded.
 - Workshop content folder: `steamapps/workshop/content/784150/{item_id}/`.
@@ -382,8 +386,11 @@ Run `wrsrcli update` to download all dependencies.
 ```
 
 `Asset status (OK)` / `(Update needed)` compares the installed version
-against the workshop's, so it needs the API and is **absent** in no-API
-mode rather than claiming everything is current:
+against the newest published one. That comparison uses the Web API's
+`time_updated` where available and the `.acf`'s own `latest_timeupdated`
+otherwise, so it works with no key (D-022). Where neither source can answer
+— an old manifest, or an item only `update` placed — the accordion is
+**absent** rather than claiming everything is current:
 
 ```
 All assets are up to date. No further action is needed.
@@ -394,6 +401,11 @@ The following items need to be updated:
 
 Run `wrsrcli update` to update.
 ```
+
+When the answer came from the `.acf` rather than the API, the panel adds,
+in muted text: "Checked against Steam's own record, as of its last sync.
+Set an API key for a live check." Steam's cached view is worth acting on,
+but it is not a live check and is not presented as one.
 
 Both lists link the item id, the name and the creator. The Updated column
 shows the **installed** version's date, not the workshop's — showing the
@@ -573,11 +585,17 @@ newer than the installed one. Reads `manifest.json`; run `scan` first.
 
 - *Missing dependencies* come from the manifest's `dependencies` (§4.1) and
   need no API call.
-- *Out of date* means the workshop's `time_updated` is **strictly greater**
-  than the installed `date_updated`. Equal timestamps, an unreadable value,
-  or a missing API response all mean up to date — a partial response never
-  invents work. If the API is unreachable the command says so and handles
-  only the missing dependencies.
+- *Out of date* means the newest published version is **strictly greater**
+  than the installed `date_updated`. The newest version is the API's
+  `time_updated` where available, else the manifest's `date_latest` from
+  the `.acf` (§2.1, D-022), so the check works with no key. The fallback is
+  per item: a partial API response leaves the rest on the `.acf` rather
+  than reporting them current. Equal timestamps and unreadable values both
+  mean up to date — nothing invents work.
+- Items to be fetched that the manifest does not describe — a missing
+  dependency — are looked up before downloading, so the version recorded
+  in `downloads.json` is never null and staleness stays answerable for
+  them afterwards.
 
 **Prompt.** Everything to be fetched is listed first, then:
 

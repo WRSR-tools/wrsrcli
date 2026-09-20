@@ -149,8 +149,14 @@ in its own heading, so you can read them without opening anything:
   red, listing items the workshop has a newer version of.
 
 A green panel is closed — there is nothing inside worth reading. A red one
-is already open, and tells you to run `wrsrcli update`. Asset status needs
-an API key and is left out entirely without one, rather than claiming
+is already open, and tells you to run `wrsrcli update`.
+
+Both panels work **without** an API key. Steam itself records the newest
+version it knows of for each item, so "is this out of date" is answered
+from your own Steam files. With a key set, the check is made live against
+the workshop instead; without one, the panel says it checked Steam's own
+record as of its last sync. If neither can answer — an old manifest, or an
+item only `update` put there — the panel is left out rather than claiming
 everything is current when it cannot tell.
 
 The **Updated** column is the version *you have installed*, not the latest
@@ -161,7 +167,7 @@ do not have.
 ### `wrsrcli update`
 
 Downloads what the table says is needed — missing dependencies, and items
-with a newer version on the workshop.
+with a newer version on the workshop. Works with or without an API key.
 
 ```
 > wrsrcli update
