@@ -101,6 +101,11 @@ def build_parser():
     )
     output_table.set_defaults(func=commands.cmd_output_table)
 
+    update = subcommands.add_parser(
+        "update", help="download missing dependencies and out-of-date items"
+    )
+    update.set_defaults(func=commands.cmd_update)
+
     import_ = subcommands.add_parser(
         "import", help="apply a YAML import list's copy/remove operations"
     )

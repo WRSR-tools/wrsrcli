@@ -19,7 +19,7 @@ double-click it — it offers to install itself onto your PATH. No Python and
 no administrator rights are needed.
 
 Full instructions, including the `pip` route and how to uninstall, are in
-[dev/docs/Install.md](dev/docs/Install.md).
+[docs/Install.md](docs/Install.md).
 
 ## Use
 
@@ -27,12 +27,12 @@ Full instructions, including the `pip` route and how to uninstall, are in
 wrsrcli path --auto-detect     find your game and workshop folders
 wrsrcli scan                   build the asset manifest
 wrsrcli output-table           write a searchable WRSR Assets.html
+wrsrcli update                 fetch missing dependencies and updates
 wrsrcli import mylist.yaml     apply an import list, with backups
 ```
 
-Every command is documented in [dev/docs/Use.md](dev/docs/Use.md), and the
-import-list format has its own guide in
-[dev/docs/Import.md](dev/docs/Import.md).
+Every command is documented in [docs/Use.md](docs/Use.md), and the
+import-list format has its own guide in [docs/Import.md](docs/Import.md).
 
 ## Requirements
 

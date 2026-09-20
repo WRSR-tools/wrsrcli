@@ -12,7 +12,7 @@ complete (decision D-020).
 
 import json
 
-from . import acf, config, steam, steamapi, workshopconfig
+from . import acf, config, downloads, steam, steamapi, workshopconfig
 from .errors import WrsrcliError
 
 OWNER_ID = "$OWNER_ID"
@@ -57,7 +57,55 @@ def build(workshop_path, acf_path):
             }
         )
 
+    entries.extend(_folder_only(workshop_path, set(items), warnings))
+    entries.sort(key=lambda entry: entry["item_id"])
     return entries, warnings
+
+
+def _folder_only(workshop_path, known, warnings):
+    """Installed items the .acf does not mention (decision D-021).
+
+    `wrsrcli update` places items Steam has no record of, so the .acf alone
+    would report them missing forever. Their installed-version timestamp
+    comes from our own download record, since Steam keeps none.
+    """
+    if not workshop_path.is_dir():
+        return []
+
+    placed = downloads.load()
+    extra = []
+
+    for folder in sorted(workshop_path.iterdir()):
+        if not folder.is_dir() or not folder.name.isdigit() or folder.name in known:
+            continue
+
+        owner_id = item_type = None
+        config_file = folder / "workshopconfig.ini"
+        if config_file.exists():
+            record = workshopconfig.load(config_file)
+            owner_id = workshopconfig.first(record, OWNER_ID)
+            item_type = workshopconfig.first(record, ITEM_TYPE)
+
+        known_download = placed.get(folder.name)
+        if known_download is None:
+            # Not ours, and not Steam's either. Worth saying so — the old
+            # code passed over these in silence.
+            warnings.append(
+                f"{folder.name} is installed on disk but absent from Steam's "
+                ".acf, and wrsrcli did not download it"
+            )
+
+        extra.append(
+            {
+                "item_id": folder.name,
+                "owner_id": owner_id,
+                "item_type": item_type,
+                "date_updated": (known_download or {}).get("time_updated"),
+                "date_touched": None,
+            }
+        )
+
+    return extra
 
 
 def add_dependencies(entries, key):

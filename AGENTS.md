@@ -93,8 +93,8 @@ so rather than quietly bringing one into line with the other.
 ## Working conventions
 
 - Command-line interface: one subcommand per verb (`scan`, `output-table`,
-  `import`, `restore`, `rollback`, `manual-rerun`, `manual-check`, `api`,
-  `path`, `install`, `uninstall`, `open-web`, `steamcmd`), matching the
+  `update`, `import`, `restore`, `rollback`, `manual-rerun`, `manual-check`,
+  `api`, `path`, `install`, `uninstall`, `open-web`, `steamcmd`), matching the
   definitions in `SPEC.md`. Adding a verb means updating this list and
   `SPEC.md` in the same change — `install` and `uninstall` were both
   implemented before either was recorded (see D-015).
