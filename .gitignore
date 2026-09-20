@@ -3,3 +3,8 @@
 __pycache__/
 *.py[cod]
 *.egg-info/
+
+# Local PyInstaller builds. Releases are built by CI.
+build/
+dist/
+*.spec
