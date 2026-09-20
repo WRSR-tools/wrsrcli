@@ -8,7 +8,7 @@ indefinitely, with no network access, so nothing is loaded from a CDN.
 import datetime
 import json
 
-from . import config, workshopconfig
+from . import config, updates, workshopconfig
 from .errors import WrsrcliError
 
 ITEM_NAME = "$ITEM_NAME"
@@ -98,9 +98,12 @@ def build_rows(entries, workshop_path, details=None, authors=None):
         owner_id = entry.get("owner_id")
         enriched = details.get(item_id, {})
 
-        # The API's time_updated is authoritative where present; the .acf's
-        # value is what the no-API path has to work with.
-        updated = enriched.get("time_updated") or entry.get("date_updated")
+        # The *installed* version's time, from the .acf. The API's
+        # time_updated is the workshop's current version, which is what the
+        # Asset status accordion compares against — showing it here would
+        # display a version the user does not have (decision D-021). It is
+        # used only as a fallback for an item with no local timestamp at all.
+        updated = entry.get("date_updated") or enriched.get("time_updated")
         posted = enriched.get("time_created")
         size = enriched.get("file_size")
 
@@ -142,6 +145,50 @@ def build_rows(entries, workshop_path, details=None, authors=None):
     return rows
 
 
+def build_status(entries, rows, details=None, api_mode=False):
+    """The payload behind the two status accordions (decision D-021).
+
+    `assets` is None without an API key: staleness needs the workshop's
+    current version, and there is no local source for it. `dependencies` is
+    None when no scan has recorded any, so the accordion is absent rather
+    than claiming everything is fine.
+    """
+    named = {row["item_id"]: row for row in rows}
+
+    def describe(item_id, fallback_name="", fallback_creator=""):
+        row = named.get(item_id, {})
+        return {
+            "item_id": item_id,
+            "name": row.get("name") or fallback_name or "(name unavailable)",
+            "creator": row.get("author")
+            or fallback_creator
+            or row.get("owner_id")
+            or "unknown",
+            "creator_id": row.get("owner_id") or "",
+        }
+
+    status = {"dependencies": None, "assets": None}
+
+    if any("dependencies" in entry for entry in entries):
+        missing = updates.unmet(entries)
+        status["dependencies"] = {
+            "state": "missing" if missing else "ok",
+            "items": [
+                describe(dep["item_id"], dep["name"], dep["creator"])
+                for dep in missing
+            ],
+        }
+
+    if api_mode:
+        stale = updates.outdated(entries, details or {})
+        status["assets"] = {
+            "state": "stale" if stale else "ok",
+            "items": [describe(item["item_id"]) for item in stale],
+        }
+
+    return status
+
+
 def _embed(data):
     """JSON safe to place inside a <script> element."""
     return json.dumps(data, ensure_ascii=False).replace("</", "<\\/")
@@ -157,11 +204,16 @@ _TEMPLATE = """<!DOCTYPE html>
   :root {{
     --bg: #f6f6f4; --panel: #ffffff; --ink: #1b1b1a; --muted: #6a6a66;
     --line: #dcdcd6; --accent: #b7410e; --hover: #f0efe9;
+    /* Semantic pairs, contrast-checked against their own tint, not the page. */
+    --good-ink: #1d6b3f; --good-bg: #eaf5ee; --good-line: #bcdcc8;
+    --bad-ink: #9d2727; --bad-bg: #fbecea; --bad-line: #eec4be;
   }}
   @media (prefers-color-scheme: dark) {{
     :root {{
       --bg: #17171a; --panel: #202024; --ink: #e9e9e4; --muted: #9a9a93;
       --line: #33333a; --accent: #d9793f; --hover: #26262c;
+      --good-ink: #7fd3a0; --good-bg: #172420; --good-line: #2c4536;
+      --bad-ink: #f3a49b; --bad-bg: #261a1a; --bad-line: #4a2d2b;
     }}
   }}
   * {{ box-sizing: border-box; }}
@@ -220,6 +272,32 @@ _TEMPLATE = """<!DOCTYPE html>
   tr.deps .sid {{ font-family: Consolas, ui-monospace, monospace; font-size: 13px; }}
   .ok {{ color: var(--muted); }}
   .missing {{ color: var(--accent); font-weight: 600; }}
+  .status {{ margin-bottom: 14px; }}
+  .status details {{
+    border: 1px solid var(--line); border-radius: 9px; margin-bottom: 8px;
+    background: var(--panel); overflow: hidden;
+  }}
+  .status details.good {{ border-color: var(--good-line); background: var(--good-bg); }}
+  .status details.bad {{ border-color: var(--bad-line); background: var(--bad-bg); }}
+  .status summary {{
+    cursor: pointer; padding: 10px 13px; font-weight: 600; font-size: 14px;
+    list-style: none; user-select: none;
+  }}
+  .status summary::-webkit-details-marker {{ display: none; }}
+  .status summary::before {{ content: '\\25b8 '; font-size: 11px; opacity: 0.7; }}
+  .status details[open] > summary::before {{ content: '\\25be '; }}
+  .status summary:focus-visible {{ outline: 2px solid var(--accent); outline-offset: -2px; }}
+  .status details.good summary {{ color: var(--good-ink); }}
+  .status details.bad summary {{ color: var(--bad-ink); }}
+  .status .panel {{ padding: 0 13px 12px; font-size: 14px; }}
+  .status ul {{ margin: 6px 0; padding: 0 0 0 18px; list-style: none; }}
+  .status li {{ padding: 2px 0; }}
+  .status .sid {{ font-family: Consolas, ui-monospace, monospace; font-size: 13px; }}
+  .status code {{
+    font-family: Consolas, ui-monospace, monospace; font-size: 13px;
+    background: var(--panel); border: 1px solid var(--line);
+    border-radius: 5px; padding: 1px 5px;
+  }}
   footer {{ margin-top: 16px; color: var(--muted); font-size: 12px; }}
 </style>
 </head>
@@ -227,6 +305,8 @@ _TEMPLATE = """<!DOCTYPE html>
 <div class="wrap">
   <h1>WRSR Assets</h1>
   <div class="meta">{count} installed workshop item(s) &middot; generated {generated}{mode}</div>
+
+  <div class="status" id="status"></div>
 
   <div class="controls">
     <input id="q" type="search" placeholder="Search name, ID, type, tags, owner&hellip;"
@@ -247,9 +327,11 @@ _TEMPLATE = """<!DOCTYPE html>
 </div>
 
 <script id="data" type="application/json">{data}</script>
+<script id="status-data" type="application/json">{status}</script>
 <script>
 (function () {{
   var rows = JSON.parse(document.getElementById('data').textContent);
+  var status = JSON.parse(document.getElementById('status-data').textContent);
   var columns = {columns};
 
   var q = document.getElementById('q');
@@ -273,6 +355,84 @@ _TEMPLATE = """<!DOCTYPE html>
     a.rel = 'noopener noreferrer';
     if (cls) a.className = cls;
     return a;
+  }}
+
+  // The two status accordions. Clean ones are collapsed: a green "nothing to
+  // do" panel has nothing worth unfolding, a red one is why you are here.
+  function accordion(title, good, goodLabel, badLabel, lead, items, footer) {{
+    var box = document.createElement('details');
+    box.className = good ? 'good' : 'bad';
+    box.open = !good;
+
+    var head = document.createElement('summary');
+    head.textContent = title + ' (' + (good ? goodLabel : badLabel) + ')';
+    box.appendChild(head);
+
+    var panel = document.createElement('div');
+    panel.className = 'panel';
+
+    var first = document.createElement('div');
+    first.textContent = lead;
+    panel.appendChild(first);
+
+    if (items && items.length) {{
+      var list = document.createElement('ul');
+      items.forEach(function (item) {{
+        var li = document.createElement('li');
+        li.appendChild(document.createTextNode('- '));
+        li.appendChild(link(ITEM_URL + encodeURIComponent(item.item_id),
+                            item.item_id, 'sid'));
+        li.appendChild(document.createTextNode(' '));
+        li.appendChild(link(ITEM_URL + encodeURIComponent(item.item_id), item.name));
+        li.appendChild(document.createTextNode(' ('));
+        if (item.creator_id) {{
+          li.appendChild(link(USER_URL + encodeURIComponent(item.creator_id),
+                              item.creator));
+        }} else {{
+          li.appendChild(document.createTextNode(item.creator));
+        }}
+        li.appendChild(document.createTextNode(')'));
+        list.appendChild(li);
+      }});
+      panel.appendChild(list);
+    }}
+
+    if (footer) {{
+      var tail = document.createElement('div');
+      footer.forEach(function (part) {{
+        if (part.code) {{
+          var code = document.createElement('code');
+          code.textContent = part.code;
+          tail.appendChild(code);
+        }} else {{
+          tail.appendChild(document.createTextNode(part.text));
+        }}
+      }});
+      panel.appendChild(tail);
+    }}
+
+    box.appendChild(panel);
+    document.getElementById('status').appendChild(box);
+  }}
+
+  if (status.dependencies) {{
+    var depsOk = status.dependencies.state === 'ok';
+    accordion('Dependencies', depsOk, 'OK', 'Dependencies missing',
+      depsOk ? 'Dependencies OK. No further action needed.'
+             : 'The following items have unmet dependencies:',
+      depsOk ? null : status.dependencies.items,
+      depsOk ? null : [{{text: 'Run '}}, {{code: 'wrsrcli update'}},
+                       {{text: ' to download all dependencies.'}}]);
+  }}
+
+  if (status.assets) {{
+    var assetsOk = status.assets.state === 'ok';
+    accordion('Asset status', assetsOk, 'OK', 'Update needed',
+      assetsOk ? 'All assets are up to date. No further action is needed.'
+               : 'The following items need to be updated:',
+      assetsOk ? null : status.assets.items,
+      assetsOk ? null : [{{text: 'Run '}}, {{code: 'wrsrcli update'}},
+                         {{text: ' to update.'}}]);
   }}
 
   columns.forEach(function (col) {{
@@ -484,7 +644,7 @@ def columns_for(rows, api_mode):
     return columns
 
 
-def render(rows, api_mode=False):
+def render(rows, api_mode=False, status=None):
     generated = datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
     mode = "" if api_mode else " &middot; local data only (no Steam Web API key set)"
     return _TEMPLATE.format(
@@ -492,5 +652,6 @@ def render(rows, api_mode=False):
         generated=generated,
         mode=mode,
         data=_embed(rows),
+        status=_embed(status or {"dependencies": None, "assets": None}),
         columns=_embed(columns_for(rows, api_mode)),
     )

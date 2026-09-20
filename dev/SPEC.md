@@ -90,8 +90,11 @@ Notes:
 
 All persistent local state lives in `%APPDATA%\wrsrcli\` — **never** inside
 the project repository. This includes `config.json` (API key, workshop
-path, game path) and the backup manifest. Because this lives outside the
-repo, it never needs `.gitignore` handling.
+path, game path), the backup manifest, and `downloads.json` — the record
+of what `update` has placed on disk and at which workshop version, which
+exists because Steam keeps no `.acf` entry for those items (decision
+D-021). Because this lives outside the repo, it never needs `.gitignore`
+handling.
 
 ### `wrsrcli api {key}`
 
@@ -277,6 +280,13 @@ installed workshop item, as a JSON array:
   Whether a dependency is *installed* is deliberately **not** stored; it
   is derived at render time from the manifest's own entries, so the two
   cannot disagree. See decision D-020.
+- "Installed" means the `.acf` **or** a numeric folder in the workshop
+  directory. The `.acf` remains the primary source; folders it does not
+  mention are added afterwards, because items placed by `update` (§4.8)
+  have no `.acf` entry and would otherwise stay invisible to the tool that
+  reported them missing. A folder-only item takes its `date_updated` from
+  `downloads.json` (§3) and has a null `date_touched`; one wrsrcli did not
+  place is additionally warned about. See decision D-021.
 - With no key stored, or if the API call fails, the field is **absent**
   and the rest of the manifest is written as normal, with a warning. The
   local inventory is the job `scan` does not fail at. A scan that did
@@ -350,6 +360,46 @@ with `rel="noopener noreferrer"`. A hyperlink is navigation, not a
 resource the page loads, so the file remains standalone with zero external
 references in the sense this section requires. Cells with no id to link
 are rendered as plain text.
+
+**Status accordions.** Two accordions sit above the controls, each headed
+with its own state so it reads without being opened. A clean one is green
+and collapsed; a problem one is red and open, since a "nothing to do" panel
+has nothing worth unfolding and a red one is why the user is looking. The
+colour pairs are contrast-checked against their own tint in both themes
+(measured 5.82:1 and 6.64:1 light, 8.95:1 and 8.51:1 dark).
+
+`Dependencies (OK)` / `(Dependencies missing)` reads the manifest, so it
+appears whenever dependencies have been scanned, key or not:
+
+```
+Dependencies OK. No further action needed.
+```
+```
+The following items have unmet dependencies:
+   - {steamid} {assetname_linked} ({creatorname})
+
+Run `wrsrcli update` to download all dependencies.
+```
+
+`Asset status (OK)` / `(Update needed)` compares the installed version
+against the workshop's, so it needs the API and is **absent** in no-API
+mode rather than claiming everything is current:
+
+```
+All assets are up to date. No further action is needed.
+```
+```
+The following items need to be updated:
+   - {steamid} {assetname_linked} ({creatorname})
+
+Run `wrsrcli update` to update.
+```
+
+Both lists link the item id, the name and the creator. The Updated column
+shows the **installed** version's date, not the workshop's — showing the
+remote value there would display a version the user does not have and hide
+the condition this accordion reports (decision D-021, superseding the
+earlier preference for the API's `time_updated`).
 
 **Dependencies.** Where the manifest carries `dependencies` (§4.1), each
 such row gets a fold-down, collapsed by default, opened by a toggle in a
@@ -512,6 +562,47 @@ tracked backup entry for staleness and flags candidates for
   most recent relevant entry.
 
 ---
+
+### 4.8 `wrsrcli update`
+
+Downloads everything the inventory says is needed: dependencies referenced
+by an installed item but not installed, and items whose workshop version is
+newer than the installed one. Reads `manifest.json`; run `scan` first.
+
+**Which items qualify.**
+
+- *Missing dependencies* come from the manifest's `dependencies` (§4.1) and
+  need no API call.
+- *Out of date* means the workshop's `time_updated` is **strictly greater**
+  than the installed `date_updated`. Equal timestamps, an unreadable value,
+  or a missing API response all mean up to date — a partial response never
+  invents work. If the API is unreachable the command says so and handles
+  only the missing dependencies.
+
+**Prompt.** Everything to be fetched is listed first, then:
+
+```
+Press ENTER to download, or anything else to cancel:
+```
+
+Only ENTER proceeds, matching `steamcmd --install` (D-008). This is the
+explicit opt-in AGENTS.md requires before any download.
+
+**Where files go.** SteamCMD fetches into its own tree, and `update` then
+moves the item into `steamapps/workshop/content/784150/{id}/`, where the
+game looks. Replacing an existing item goes through
+`backup.Run.stash_removal` first, keyed on that item id, so `rollback`
+undoes an update exactly as it undoes an import. A newly added dependency
+overwrites nothing and is simply placed. Each item is its own backup
+generation, so a failure part-way leaves what already succeeded recorded
+and undoable; one item's failure is reported and the rest continue, and the
+command exits non-zero if any failed.
+
+**Afterwards.** The fetched version is recorded in `downloads.json` (§3),
+and the user is told to re-run `scan`. Steam has no record of items placed
+this way: it will not update them, and a Steam-side verify may remove them.
+The command says so, because subscribing in Steam remains the durable fix.
+See decision D-021.
 
 ## 5. Backup manifest
 

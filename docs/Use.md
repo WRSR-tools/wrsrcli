@@ -140,6 +140,52 @@ page you would install it from.
 Dependencies come from the manifest, so they still appear when you build a
 table without a key — as long as the scan that wrote the manifest had one.
 
+**Status at a glance.** Two panels sit above the table. Each says its state
+in its own heading, so you can read them without opening anything:
+
+- **Dependencies (OK)** in green, or **Dependencies (Dependencies
+  missing)** in red, listing what is missing.
+- **Asset status (OK)** in green, or **Asset status (Update needed)** in
+  red, listing items the workshop has a newer version of.
+
+A green panel is closed — there is nothing inside worth reading. A red one
+is already open, and tells you to run `wrsrcli update`. Asset status needs
+an API key and is left out entirely without one, rather than claiming
+everything is current when it cannot tell.
+
+The **Updated** column is the version *you have installed*, not the latest
+published. That is the point of the Asset status panel: if the two differ,
+the panel says so rather than the column quietly showing you a version you
+do not have.
+
+### `wrsrcli update`
+
+Downloads what the table says is needed — missing dependencies, and items
+with a newer version on the workshop.
+
+```
+> wrsrcli update
+Missing dependencies (1):
+   - 3773169177 TesmioLoader v. b0.3.6 (for WRSR 1.1.1.9) — required by 3773771138, 3774939545, 3779449644, 3779842468
+
+1 item(s) will be downloaded through SteamCMD into your workshop folder.
+Press ENTER to download, or anything else to cancel:
+```
+
+Nothing is downloaded until you press ENTER; anything else cancels. You
+need SteamCMD — run `wrsrcli steamcmd --install` first if you have not.
+
+Files go into your workshop folder, where the game looks for them. If an
+item is being **replaced** because it is out of date, the old copy is
+backed up first, so `wrsrcli rollback {steamid}` puts it back.
+
+Re-run `wrsrcli scan` afterwards so the manifest catches up.
+
+> **Steam does not know about items downloaded this way.** It will not keep
+> them updated, and verifying the game's files may remove them. Subscribing
+> to an item in Steam is the durable fix; `update` is for getting a
+> dependency in place now, or when subscribing is not an option.
+
 If Steam's API is unreachable or rejects your key, `output-table` says so
 and falls back to the local-only table rather than failing — you still get
 a usable file.
