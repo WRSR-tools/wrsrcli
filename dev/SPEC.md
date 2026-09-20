@@ -243,7 +243,15 @@ installed workshop item, as a JSON array:
   "owner_id": "76561198050524085",
   "item_type": "WORKSHOP_ITEMTYPE_SCRIPT",
   "date_updated": "1788306308",
-  "date_touched": "1789051884"
+  "date_touched": "1789051884",
+  "dependencies": [
+    {
+      "item_id": "3787969749",
+      "name": "Republic Mod Loader [1.1.1.9]",
+      "creator_id": "76561198050524085",
+      "creator": "UltimateUniverse"
+    }
+  ]
 }
 ```
 
@@ -259,6 +267,21 @@ installed workshop item, as a JSON array:
   `workshopconfig.ini`; if that file has been deleted locally the entry is
   still written, with those two fields null and a warning naming the item.
   See decision D-005.
+- `dependencies` is the item's Steam-declared **required items**, one
+  object each, empty where the item declares none. It is the only field
+  not sourced locally: dependencies exist solely in
+  `IPublishedFileService/GetDetails` (`includechildren=true`), which
+  requires the API key — the keyless endpoint used elsewhere carries no
+  dependency field at all. `name`, `creator_id` and `creator` are stored
+  because an unmet dependency has no local folder to read them from.
+  Whether a dependency is *installed* is deliberately **not** stored; it
+  is derived at render time from the manifest's own entries, so the two
+  cannot disagree. See decision D-020.
+- With no key stored, or if the API call fails, the field is **absent**
+  and the rest of the manifest is written as normal, with a warning. The
+  local inventory is the job `scan` does not fail at. A scan that did
+  reach the API also reports how many items declare dependencies and
+  names any that are not installed.
 
 ### 4.2 `wrsrcli output-table`
 
@@ -318,6 +341,30 @@ In no-API mode the Author name, Posted date and File size columns are
 omitted rather than rendered empty — this section's own no-API data list
 gives no local source for any of them ("No file size, no resolved author
 name, no separately-sourced posted date").
+
+**Links.** The Item ID cell links to the item's workshop page
+(`https://steamcommunity.com/sharedfiles/filedetails/?id={item_id}`), and
+the Author cell — Owner ID in no-API mode — links to the creator's profile
+(`https://steamcommunity.com/profiles/{owner_id}`). Both open in a new tab
+with `rel="noopener noreferrer"`. A hyperlink is navigation, not a
+resource the page loads, so the file remains standalone with zero external
+references in the sense this section requires. Cells with no id to link
+are rendered as plain text.
+
+**Dependencies.** Where the manifest carries `dependencies` (§4.1), each
+such row gets a fold-down, collapsed by default, opened by a toggle in a
+leading column. That column is present whenever any row has dependencies —
+in both modes, since a stored dependency is local data once scanned —
+and absent entirely when none do. The fold is headed `DEPENDENCY` for one
+and `DEPENDENCIES` for more, and lists:
+
+```
+- {steamid} {asset name} ({creator}) (OK|Not installed)
+```
+
+`OK` means the dependency is among the manifest's installed items; `Not
+installed` is emphasised in the accent colour. The item id and the creator
+are themselves links, as above. See decision D-020.
 
 ### 4.3 `wrsrcli import {path}`
 

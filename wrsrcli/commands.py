@@ -176,10 +176,52 @@ def cmd_scan(args):
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
 
+    summary = _scan_dependencies(entries)
+
     path = scan.write_manifest(entries)
     print(f"Scanned {len(entries)} installed item(s) from {workshop_path}")
+    if summary:
+        print(summary)
     print(f"Manifest written to {path}")
     return 0
+
+
+def _scan_dependencies(entries):
+    """Attach dependencies to `entries`. Returns a summary line, or None.
+
+    Dependencies need the Web API and a key. Without one, or when the call
+    fails, the manifest is still written from the local sources — the
+    inventory is the job `scan` cannot fail at (decision D-020).
+    """
+    key = config.get(config.API_KEY)
+    if not key:
+        print(
+            "warning: no Steam Web API key set — dependencies were not "
+            "checked. Set one with `wrsrcli api {key}` and scan again.",
+            file=sys.stderr,
+        )
+        return None
+
+    try:
+        declaring, unmet = scan.add_dependencies(entries, key)
+    except WrsrcliError as exc:
+        print(f"warning: {exc}", file=sys.stderr)
+        print(
+            "warning: dependencies were not checked — the manifest is "
+            "otherwise complete.",
+            file=sys.stderr,
+        )
+        for entry in entries:
+            entry.pop("dependencies", None)
+        return None
+
+    if not declaring:
+        return "No item declares a dependency."
+
+    line = f"{declaring} item(s) declare dependencies"
+    if unmet:
+        return f"{line}; {len(unmet)} not installed: {', '.join(sorted(unmet))}"
+    return f"{line}; all satisfied."
 
 
 def _prompt_save_folder():

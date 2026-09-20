@@ -78,6 +78,9 @@ def build_rows(entries, workshop_path, details=None, authors=None):
     """
     details = details or {}
     authors = authors or {}
+    # The installed set is the manifest's own entry list; a dependency is met
+    # when it is one of them.
+    installed = {e.get("item_id") for e in entries if e.get("item_id")}
 
     rows = []
     for entry in entries:
@@ -118,6 +121,22 @@ def build_rows(entries, workshop_path, details=None, authors=None):
             row["posted_sort"] = int(posted) if posted else 0
             row["size"] = _format_size(size)
             row["size_sort"] = int(size) if size else 0
+
+        if entry.get("dependencies"):
+            row["dependencies"] = [
+                {
+                    "item_id": dep.get("item_id", ""),
+                    "name": dep.get("name") or "(name unavailable)",
+                    "creator": dep.get("creator")
+                    or dep.get("creator_id")
+                    or "unknown",
+                    "creator_id": dep.get("creator_id") or "",
+                    # Derived here rather than stored, so it cannot disagree
+                    # with the manifest it was read from (decision D-020).
+                    "installed": dep.get("item_id") in installed,
+                }
+                for dep in entry["dependencies"]
+            ]
 
         rows.append(row)
     return rows
@@ -181,6 +200,26 @@ _TEMPLATE = """<!DOCTYPE html>
   tbody tr:last-child td {{ border-bottom: 0; }}
   .none {{ color: var(--muted); font-style: italic; }}
   .empty {{ padding: 28px 13px; color: var(--muted); text-align: center; }}
+  td a, .deps a {{ color: var(--accent); text-decoration: none; }}
+  td a:hover, td a:focus, .deps a:hover, .deps a:focus {{ text-decoration: underline; }}
+  th.fold, td.fold {{ width: 1px; padding-right: 0; }}
+  .toggle {{
+    font: inherit; line-height: 1; cursor: pointer; padding: 2px 6px;
+    border: 1px solid var(--line); border-radius: 6px;
+    background: var(--panel); color: var(--muted);
+  }}
+  .toggle:hover {{ color: var(--accent); border-color: var(--accent); }}
+  .toggle:focus-visible {{ outline: 2px solid var(--accent); outline-offset: 1px; }}
+  tr.deps > td {{ white-space: normal; padding: 4px 13px 13px 13px; }}
+  tr.deps h2 {{
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--muted); margin: 0 0 6px;
+  }}
+  tr.deps ul {{ margin: 0; padding: 0; list-style: none; }}
+  tr.deps li {{ padding: 2px 0; }}
+  tr.deps .sid {{ font-family: Consolas, ui-monospace, monospace; font-size: 13px; }}
+  .ok {{ color: var(--muted); }}
+  .missing {{ color: var(--accent); font-weight: 600; }}
   footer {{ margin-top: 16px; color: var(--muted); font-size: 12px; }}
 </style>
 </head>
@@ -220,9 +259,31 @@ _TEMPLATE = """<!DOCTYPE html>
   var count = document.getElementById('count');
   var sortKey = null, sortDir = 1;
 
+  var ITEM_URL = 'https://steamcommunity.com/sharedfiles/filedetails/?id=';
+  var USER_URL = 'https://steamcommunity.com/profiles/';
+  var DASH = '\\u2014';
+
+  // Links are navigation, never a resource the page loads, so the file stays
+  // standalone with no external references (decision D-020).
+  function link(href, text, cls) {{
+    var a = document.createElement('a');
+    a.href = href;
+    a.textContent = text;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    if (cls) a.className = cls;
+    return a;
+  }}
+
   columns.forEach(function (col) {{
     var th = document.createElement('th');
     th.textContent = col.label;
+    if (col.key === '_fold') {{
+      th.className = 'fold';
+      col.th = th;
+      head.appendChild(th);
+      return;
+    }}
     th.addEventListener('click', function () {{
       if (sortKey === col.key) {{ sortDir = -sortDir; }}
       else {{ sortKey = col.key; sortDir = 1; }}
@@ -275,19 +336,89 @@ _TEMPLATE = """<!DOCTYPE html>
     body.textContent = '';
     view.forEach(function (row) {{
       var tr = document.createElement('tr');
+      var deps = row.dependencies || [];
+      var toggle = null;
+
+      if (deps.length) {{
+        toggle = document.createElement('button');
+        toggle.type = 'button';
+        toggle.className = 'toggle';
+        toggle.setAttribute('aria-expanded', 'false');
+        toggle.setAttribute('aria-label',
+          deps.length + ' dependency(ies) for ' + row.item_id);
+        toggle.textContent = '\\u25b8';
+      }}
+
       columns.forEach(function (col) {{
         var td = document.createElement('td');
         if (col.cls) td.className = col.cls;
+
+        if (col.key === '_fold') {{
+          if (toggle) td.appendChild(toggle);
+          tr.appendChild(td);
+          return;
+        }}
+
         var value = row[col.key];
+        var id = col.link === 'item' ? row.item_id
+               : col.link === 'creator' ? row.owner_id : null;
+
         if (value === '' || value === null || value === undefined) {{
           td.className = (td.className + ' none').trim();
-          td.textContent = '\\u2014';
+          td.textContent = DASH;
+        }} else if (col.link && id && id !== DASH) {{
+          td.appendChild(link(
+            (col.link === 'item' ? ITEM_URL : USER_URL) + encodeURIComponent(id),
+            String(value)));
         }} else {{
           td.textContent = value;
         }}
         tr.appendChild(td);
       }});
       body.appendChild(tr);
+
+      if (!deps.length) return;
+
+      var dtr = document.createElement('tr');
+      dtr.className = 'deps';
+      dtr.hidden = true;
+      var dtd = document.createElement('td');
+      dtd.colSpan = columns.length;
+
+      var heading = document.createElement('h2');
+      heading.textContent = deps.length === 1 ? 'DEPENDENCY' : 'DEPENDENCIES';
+      dtd.appendChild(heading);
+
+      var list = document.createElement('ul');
+      deps.forEach(function (dep) {{
+        var li = document.createElement('li');
+        li.appendChild(document.createTextNode('- '));
+        li.appendChild(link(ITEM_URL + encodeURIComponent(dep.item_id),
+                            dep.item_id, 'sid'));
+        li.appendChild(document.createTextNode(' ' + dep.name + ' ('));
+        if (dep.creator_id) {{
+          li.appendChild(link(USER_URL + encodeURIComponent(dep.creator_id),
+                              dep.creator));
+        }} else {{
+          li.appendChild(document.createTextNode(dep.creator));
+        }}
+        li.appendChild(document.createTextNode(') '));
+        var state = document.createElement('span');
+        state.className = dep.installed ? 'ok' : 'missing';
+        state.textContent = dep.installed ? '(OK)' : '(Not installed)';
+        li.appendChild(state);
+        list.appendChild(li);
+      }});
+      dtd.appendChild(list);
+      dtr.appendChild(dtd);
+      body.appendChild(dtr);
+
+      toggle.addEventListener('click', function () {{
+        var open = dtr.hidden;
+        dtr.hidden = !open;
+        toggle.setAttribute('aria-expanded', open ? 'true' : 'false');
+        toggle.textContent = open ? '\\u25be' : '\\u25b8';
+      }});
     }});
 
     if (!view.length) {{
@@ -317,25 +448,40 @@ _TEMPLATE = """<!DOCTYPE html>
 # SPEC.md 4.2. In no-API mode Author name, Posted date and File size are
 # omitted rather than rendered empty — there is no local source for any of
 # them.
+# `link` names the row field holding the id the href is built from, not the
+# cell's own text: the Author column shows a name and links by owner_id.
 COLUMNS = [
-    {"key": "item_id", "label": "Item ID", "cls": "id"},
+    {"key": "item_id", "label": "Item ID", "cls": "id", "link": "item"},
     {"key": "name", "label": "Name", "cls": "name"},
     {"key": "item_type", "label": "Type"},
     {"key": "tags", "label": "Tags"},
-    {"key": "owner_id", "label": "Owner ID", "cls": "owner"},
+    {"key": "owner_id", "label": "Owner ID", "cls": "owner", "link": "creator"},
     {"key": "updated", "label": "Updated", "sort": "updated_sort"},
 ]
 
 COLUMNS_API = [
-    {"key": "item_id", "label": "Item ID", "cls": "id"},
+    {"key": "item_id", "label": "Item ID", "cls": "id", "link": "item"},
     {"key": "name", "label": "Name", "cls": "name"},
     {"key": "item_type", "label": "Type"},
     {"key": "tags", "label": "Tags"},
-    {"key": "author", "label": "Author"},
+    {"key": "author", "label": "Author", "link": "creator"},
     {"key": "posted", "label": "Posted", "sort": "posted_sort"},
     {"key": "updated", "label": "Updated", "sort": "updated_sort"},
     {"key": "size", "label": "Size", "sort": "size_sort"},
 ]
+
+
+# Prepended when anything has dependencies to show. Unlike author/posted/size,
+# dependencies survive in the manifest once scanned, so they are local data at
+# render time and the fold is not conditional on a key being set (D-020).
+FOLD_COLUMN = {"key": "_fold", "label": "", "cls": "fold"}
+
+
+def columns_for(rows, api_mode):
+    columns = COLUMNS_API if api_mode else COLUMNS
+    if any(row.get("dependencies") for row in rows):
+        return [FOLD_COLUMN] + columns
+    return columns
 
 
 def render(rows, api_mode=False):
@@ -346,5 +492,5 @@ def render(rows, api_mode=False):
         generated=generated,
         mode=mode,
         data=_embed(rows),
-        columns=_embed(COLUMNS_API if api_mode else COLUMNS),
+        columns=_embed(columns_for(rows, api_mode)),
     )

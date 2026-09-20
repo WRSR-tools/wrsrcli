@@ -3,11 +3,16 @@
 SPEC.md 4.1. One entry per *installed* item; items the .acf lists only
 under WorkshopItemDetails are subscribed-but-not-downloaded and are not
 inventoried.
+
+The inventory itself is local. Dependencies are the one field that is not:
+they exist only in the Steam Web API, behind a key, so they are attached
+afterwards and a failure to fetch them leaves the manifest otherwise
+complete (decision D-020).
 """
 
 import json
 
-from . import acf, config, steam, workshopconfig
+from . import acf, config, steam, steamapi, workshopconfig
 from .errors import WrsrcliError
 
 OWNER_ID = "$OWNER_ID"
@@ -53,6 +58,47 @@ def build(workshop_path, acf_path):
         )
 
     return entries, warnings
+
+
+def add_dependencies(entries, key):
+    """Attach Steam's declared required items to each entry, in place.
+
+    Sets `dependencies` on every entry — an empty list where the item
+    declares none — so a manifest that went through this step is
+    distinguishable from one written without a key, which has no such key
+    at all. Whether a dependency is *installed* is deliberately not stored;
+    it is derived from the manifest's own entries at render time (D-020).
+
+    Returns the number of dependency-declaring items and the set of
+    unmet dependency ids.
+    """
+    item_ids = [entry["item_id"] for entry in entries if entry.get("item_id")]
+    children = steamapi.published_file_children(key, item_ids)
+
+    referenced = sorted({cid for listed in children.values() for cid in listed})
+    # The dependency's own metadata: an unmet one has no folder on disk, so
+    # the API is the only place its name and creator can come from.
+    meta = steamapi.published_file_details(referenced) if referenced else {}
+    creators = sorted(
+        {m["creator"] for m in meta.values() if m.get("creator")}
+    )
+    names = steamapi.player_names(key, creators) if creators else {}
+
+    installed = set(item_ids)
+    for entry in entries:
+        listed = children.get(entry.get("item_id"), [])
+        entry["dependencies"] = [
+            {
+                "item_id": cid,
+                "name": (meta.get(cid) or {}).get("title") or "",
+                "creator_id": (meta.get(cid) or {}).get("creator") or "",
+                "creator": names.get((meta.get(cid) or {}).get("creator") or "", ""),
+            }
+            for cid in listed
+        ]
+
+    unmet = {cid for cid in referenced if cid not in installed}
+    return len(children), unmet
 
 
 def write_manifest(entries):
