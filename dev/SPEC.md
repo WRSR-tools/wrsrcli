@@ -198,6 +198,15 @@ See decision D-015, which supersedes D-014's exclusion of an uninstall path.
 
 ## 4. Commands
 
+`wrsrcli --version` prints the version, then the line held in
+`versions/vX.Y.Z.txt` for that build — written by the release workflow and
+saying either that this is the latest version or that it is outdated and
+`wrsrcli upgrade` should be run (decision D-026). The tool relays that line
+rather than comparing versions itself, so what a released build says about
+itself remains editable after release. The check has a 2.5 second timeout
+and, when it cannot be made, says so and leaves the version number standing;
+the note is shown in the accent only when it reports the build outdated.
+
 `wrsrcli --help`, and `wrsrcli` with no arguments (D-017), print an
 80-column banner rather than argparse's usage line: a rule, the name with
 `vX.Y.Z - YYYY-MM-DD` right-aligned, the website, a rule, the description,
@@ -592,6 +601,29 @@ commands and options.
 - **Known gap:** PowerShell does not invoke a native command's completer for
   a bare `-` or `--`, so Tab offers nothing there. One further character
   completes normally. See decision D-025.
+
+### 4.10 `wrsrcli upgrade`
+
+Downloads the newest release from GitHub and replaces this executable with
+it. Standalone `.exe` only; from source or a pip install it says to use
+`pip install -U wrsrcli` rather than touching site-packages.
+
+- The newest release and its asset URL come from the GitHub releases API.
+  When it is already current, the command says so and stops.
+- Both version numbers and the path to be replaced are printed, then:
+  `Press ENTER to download and install it, or anything else to cancel:`.
+  Only ENTER proceeds — the opt-in AGENTS.md requires before a download.
+- The download is checked for the `MZ` header before anything is moved. A
+  404 page, a captive portal or a truncated transfer is refused, because the
+  alternative is renaming it into place as the tool.
+- Windows will not overwrite a running executable but will rename one, so
+  the live file becomes `wrsrcli.exe.old` and the download takes its name.
+  The leftover is deleted by the next run, which no longer holds it open.
+- Every failure leaves something that works: a failed download never
+  reaches the rename, and a failed second rename puts the original back
+  before raising.
+
+See decision D-026.
 
 ## 5. Backup manifest
 

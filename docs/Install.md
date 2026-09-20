@@ -142,3 +142,15 @@ wrsrcli path -w "D:\SteamLibrary\steamapps\workshop\content\784150"
 ```
 
 Then carry on with [Use.md](Use.md).
+
+## Upgrading
+
+```
+wrsrcli upgrade
+```
+
+Checks for a newer release, shows both version numbers, and replaces the
+executable once you press ENTER. `wrsrcli --version` tells you whether you
+are behind without downloading anything.
+
+If you installed with pip, use `pip install -U wrsrcli` instead.

@@ -11,6 +11,25 @@ file, which is always plain text.
 This page covers everything except import lists, which have their own
 guide: [Import.md](Import.md).
 
+## Checking your version
+
+```
+> wrsrcli --version
+wrsrcli 0.1.0
+v0.1.0 - released on 20 September 2026. This is the latest version.
+```
+
+The second line comes from the wrsrcli repository, which keeps a small file
+for every release. When a newer one exists, that file is rewritten and you
+see this instead:
+
+```
+v0.1.0 - released on 20 September 2026. This file is outdated. Please run wrsrcli upgrade to download the latest version.
+```
+
+Offline, it simply says it could not check — you still get your version
+number.
+
 ## Setup
 
 ### `wrsrcli path`
@@ -194,6 +213,29 @@ These five commands are covered in full in [Import.md](Import.md).
 | `wrsrcli uninstall` | Remove it again, leaving your settings and backups alone |
 | `wrsrcli open-web` | Open the project website in your default browser |
 | `wrsrcli --version` | Print the version |
+
+### `wrsrcli upgrade`
+
+Downloads the newest release and replaces the copy you are running.
+
+```
+> wrsrcli upgrade
+Installed: wrsrcli 0.1.0
+Latest:    wrsrcli 0.2.0
+
+This will replace C:\Users\you\AppData\Local\Programs\wrsrcli\wrsrcli.exe
+Press ENTER to download and install it, or anything else to cancel:
+```
+
+Nothing is downloaded until you press ENTER. The version being replaced is
+kept beside the new one as `wrsrcli.exe.old` — Windows will not let a running
+program delete itself, so the next time you run wrsrcli it clears that up.
+
+If what arrives is not a Windows executable — a captive-portal page, say, or
+a half-finished download — it is refused and nothing is touched.
+
+Installed with pip instead? Use `pip install -U wrsrcli`; `upgrade` will say
+so rather than meddling with your site-packages.
 
 ### `wrsrcli completion`
 

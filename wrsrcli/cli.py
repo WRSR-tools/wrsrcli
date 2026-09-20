@@ -8,7 +8,7 @@ import argparse
 import textwrap
 import sys
 
-from . import __released__, __version__, WEBSITE, commands, install
+from . import __released__, __version__, WEBSITE, commands, install, release
 from .errors import WrsrcliError
 
 WIDTH = 80
@@ -146,6 +146,35 @@ def _option_list(parser):
     return found
 
 
+class _VersionAction(argparse.Action):
+    """`--version`, plus whether this build is still the current one.
+
+    The note is whatever `versions/vX.Y.Z.txt` says in the repository, so
+    the release workflow decides the wording and this only relays it. A
+    build that cannot reach GitHub, or that was never released, still gets
+    its version number — the question it was asked.
+    """
+
+    def __init__(self, option_strings, dest, **kwargs):
+        kwargs.setdefault("nargs", 0)
+        kwargs.setdefault("help", "show the version, and whether it is current")
+        super().__init__(option_strings, dest, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        print(f"wrsrcli {__version__}")
+        note = release.status_line(__version__)
+        if note:
+            rust = commands.enable_ansi()
+            outdated = "outdated" in note.lower()
+            print(commands.rust(note, rust) if outdated else note)
+        else:
+            print(
+                "Could not check whether this is the latest version "
+                "(no answer from GitHub)."
+            )
+        parser.exit()
+
+
 def _not_implemented(command):
     """Build a handler that reports `command` as unimplemented."""
 
@@ -189,7 +218,7 @@ def build_parser():
             "Workers & Resources: Soviet Republic."
         ),
     )
-    parser.add_argument("--version", action="version", version=f"wrsrcli {__version__}")
+    parser.add_argument("--version", action=_VersionAction)
 
     # Subcommands get the ordinary formatter, not the root's banner: there the
     # usage line and the argument list are the useful part.
@@ -370,6 +399,19 @@ def build_parser():
     )
     open_web.set_defaults(func=commands.cmd_open_web)
 
+    upgrade = subcommands.add_parser(
+        "upgrade", help="download and install the latest release"
+    )
+    _describe(
+        upgrade,
+        "Check GitHub for a newer release and, if there is one, download it "
+        "and replace this executable with it. Shows both version numbers and "
+        "waits for ENTER before downloading anything. The version it replaces "
+        "is kept alongside as a .old file, which the next run deletes. Only "
+        "applies to the standalone .exe; with pip, use pip install -U wrsrcli.",
+    )
+    upgrade.set_defaults(func=commands.cmd_upgrade)
+
     completion = subcommands.add_parser(
         "completion", help="set up Tab completion in PowerShell"
     )
@@ -457,6 +499,10 @@ Register-ArgumentCompleter -Native -CommandName wrsrcli -ScriptBlock {{
 
 def main(argv=None):
     supplied = sys.argv[1:] if argv is None else argv
+
+    # The executable an `upgrade` replaced could not be deleted while it was
+    # the one running. This is the next run, so it can go now.
+    commands._sweep_old_executable()
 
     # Double-clicked in Explorer with no arguments: argparse would print a
     # usage error into a window that closes before it can be read. Offer to
