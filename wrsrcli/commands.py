@@ -290,8 +290,8 @@ def _resolve_conflicts(conflicts):
     return chosen, skipped
 
 
-def _ensure_origin_present(item_id, workshop_root):
-    """The origin item's folder, downloading it via SteamCMD if absent."""
+def _ensure_origin_present(item_id, workshop_root, label="Origin item"):
+    """The item's workshop folder, downloading it via SteamCMD if absent."""
     folder = workshop_root / item_id
     if folder.is_dir():
         return folder
@@ -299,11 +299,11 @@ def _ensure_origin_present(item_id, workshop_root):
     install_path = steam.steam_path() / "steamcmd"
     if not steamcmd.is_installed(install_path):
         raise WrsrcliError(
-            f"origin item {item_id} is not installed locally and SteamCMD is not "
+            f"{label.lower()} {item_id} is not installed locally and SteamCMD is not "
             "available to download it — run `wrsrcli steamcmd --install` first."
         )
 
-    print(f"Origin item {item_id} is not installed locally. Downloading via SteamCMD ...")
+    print(f"{label} {item_id} is not installed locally. Downloading via SteamCMD ...")
     result, downloaded = steamcmd.download_workshop_item(install_path, APP_ID, item_id)
     if downloaded is None:
         raise WrsrcliError(
@@ -315,19 +315,69 @@ def _ensure_origin_present(item_id, workshop_root):
     return downloaded
 
 
-def _apply(recipe, list_path):
-    """Plan, settle conflicts, then execute one import list.
+def _resolve_dependencies(entry, workshop_root):
+    """Download an item's dependencies before its own files are touched.
+
+    Mandatory ones come down without asking — the item does not work
+    without them. Optional ones are offered one at a time with the list
+    author's message, and ENTER accepts, matching every other download
+    prompt in the tool (D-008, D-018).
+    """
+    for dependency in entry.mandatory:
+        if (workshop_root / dependency.item).is_dir():
+            continue
+        print(f"Item {entry.item} requires item {dependency.item}.")
+        _ensure_origin_present(dependency.item, workshop_root, "Required item")
+
+    for dependency in entry.optional:
+        if (workshop_root / dependency.item).is_dir():
+            continue
+        print(f"\nItem {entry.item} suggests item {dependency.item}:")
+        print(f"   {dependency.message}")
+        try:
+            answer = input(
+                "Press ENTER to download it, or type anything else to skip: "
+            ).strip()
+        except EOFError:
+            answer = "skip"
+        if answer:
+            print(f"Skipped optional item {dependency.item}.")
+            continue
+        _ensure_origin_present(dependency.item, workshop_root, "Optional item")
+
+
+def _apply(recipe, list_path, only=None):
+    """Apply an import list, item by item.
 
     Shared by `import` and `manual-rerun` — a rerun goes through exactly
-    the same planning and backup-before-write path (decision D-011).
+    the same planning and backup-before-write path (decision D-011), and
+    passes `only` so it replays just the origin it tracked.
     """
+    entries = recipe.items
+    if only is not None:
+        entries = [entry for entry in entries if entry.item == only]
+        if not entries:
+            raise WrsrcliError(f"{list_path} no longer contains item {only}.")
+
+    totals = (0, 0)
+    for index, entry in enumerate(entries):
+        if len(entries) > 1:
+            print(f"\n=== item {entry.item} ({index + 1} of {len(entries)}) ===")
+        written, removed = _apply_item(entry, list_path)
+        totals = (totals[0] + written, totals[1] + removed)
+    return totals
+
+
+def _apply_item(entry, list_path):
+    """Plan, settle conflicts, then execute one item's operations."""
     game_path = resolve_game_path()
     workshop_root = resolve_workshop_path()
-    origin_folder = _ensure_origin_present(recipe.item, workshop_root)
+    _resolve_dependencies(entry, workshop_root)
+    origin_folder = _ensure_origin_present(entry.item, workshop_root)
 
     # Plan everything and settle conflicts before touching a single file.
     planned, conflicts = importer.plan_copies(
-        recipe.copies, origin_folder, game_path, workshop_root
+        entry.copies, origin_folder, game_path, workshop_root
     )
     if conflicts:
         chosen, skipped = _resolve_conflicts(conflicts)
@@ -335,16 +385,16 @@ def _apply(recipe, list_path):
         for destination in skipped:
             print(f"Skipped (conflict unresolved): {destination}")
 
-    run = backup.Run(recipe.item)
+    run = backup.Run(entry.item)
 
     written = importer.execute_copies(planned, run)
     removed, missing = importer.execute_removals(
-        recipe.removals, game_path, workshop_root, run
+        entry.removals, game_path, workshop_root, run
     )
     logged = run.commit()
 
     # Registered even when nothing was backed up, so every run is replayable.
-    history.register(list_path, recipe.item, run.stamp)
+    history.register(list_path, entry.item, run.stamp)
 
     for raw in missing:
         print(f"warning: nothing to remove at {raw}", file=sys.stderr)
@@ -379,7 +429,17 @@ def cmd_manual_rerun(args):
             )
             continue
         print(f"\n--- {origin} (from {entry['list_path']}) ---")
-        _apply(importlist.load(stored), stored)
+        # A stored list can describe several items; replay only the origin
+        # this entry tracks, so a multi-item list is not re-applied whole
+        # once per item it contains.
+        recipe = importlist.load(stored)
+        if not any(item.item == origin for item in recipe.items):
+            print(
+                f"warning: {stored} no longer describes {origin} — skipped",
+                file=sys.stderr,
+            )
+            continue
+        _apply(recipe, stored, only=origin)
     return 0
 
 

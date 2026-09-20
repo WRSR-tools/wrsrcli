@@ -14,28 +14,38 @@ put back.
 ## The format
 
 ```yaml
-item: 3780739284
+version: 1
 
-copy:
-  - src: signs/
-    dst: "[GAME]/media_soviet/signs/"
-  - src: signscript.txt
-    dst: "[GAME]/media_soviet/signs/"
-  - src: patch/building.ini
-    dst: "[WORKSHOP]/3621284903/"
-
-remove:
-  - "[GAME]/media_soviet/signs/oldfolder/"
-  - "[GAME]/media_soviet/signs/stale.ini"
+items:
+  - item: 3780739284
+    copy:
+      - src: signs/
+        dst: "[GAME]/media_soviet/signs/"
+      - src: signscript.txt
+        dst: "[GAME]/media_soviet/signs/"
+      - src: patch/building.ini
+        dst: "[WORKSHOP]/3621284903/"
+    remove:
+      - "[GAME]/media_soviet/signs/oldfolder/"
+      - "[GAME]/media_soviet/signs/stale.ini"
 ```
 
 | Key | Meaning |
 |---|---|
-| `item` | The workshop item this list belongs to — the **origin**. Numeric ID. |
+| `version` | The markup version the file is written to. Required, and first. |
+| `items` | The list of items the file describes — one entry each, even for one item. |
+| `item` | The workshop item an entry belongs to — the **origin**. Numeric ID. |
 | `copy` | A list of `src` / `dst` pairs. Optional if `remove` is present. |
 | `remove` | A list of destination paths to take away. Optional if `copy` is present. |
+| `depends-mandatory` | Items this one needs. Fetched automatically. |
+| `depends-optional` | Items this one benefits from. You are asked about each. |
 
-A list needs an `item` and at least one operation.
+Every entry needs an `item` and at least one thing to do.
+
+This is **WMLS version 1**. A list written to the older markup — no
+`version:` line, a single `item:` at the top level — still works, but
+`wrsrcli` will tell you it is on borrowed time. Adding `version: 1` and
+indenting the item under `items:` is the whole migration.
 
 ### `src` — where files come from
 
@@ -50,6 +60,10 @@ cannot reach outside it.
 
 The `workshopconfig.ini` exclusion is fixed — it is Steam's own metadata
 for the item and has no business being copied anywhere.
+
+`*` is not a wildcard you can put inside a path. It means the origin
+folder and nothing else, so `src: "signs/*"` is rejected — write
+`src: "signs/"` instead.
 
 ### `dst` — where they go
 
@@ -67,10 +81,65 @@ is a YAML list.
 `remove` entries use the same two placeholders. They are destination paths,
 not origin-relative ones.
 
+### Dependencies
+
+Some assets only work alongside others. An entry can say so:
+
+```yaml
+    depends-mandatory:
+      - item: 3621284903
+    depends-optional:
+      - item: 3111111111
+        message: "Adds night lighting for these signs"
+```
+
+Anything already in your workshop folder is left alone. Anything missing
+is fetched through SteamCMD — mandatory ones without asking, since the
+item does not work without them, and optional ones one at a time:
+
+```
+Item 3780739284 suggests item 3111111111:
+   Adds night lighting for these signs
+Press ENTER to download it, or type anything else to skip:
+```
+
+That is why `message` is required on an optional dependency — it is the
+only thing you have to go on when deciding.
+
+Dependencies are **downloaded, not applied**. If a dependency has its own
+import list, run that list yourself.
+
+### Several items in one file
+
+`items:` can hold as many entries as you like:
+
+```yaml
+version: 1
+
+items:
+  - item: 3780739284
+    copy:
+      - src: "*"
+        dst: "[GAME]/media_soviet/paths/"
+
+  - item: 3621284903
+    copy:
+      - src: media_soviet/paths/
+        dst: "[GAME]/media_soviet/paths/"
+```
+
+They are applied in the order written, and each one is its own backup
+generation — exactly as if you had imported them from separate files. So
+`restore`, `rollback` and `manual-rerun` all work per item, not per file.
+An item may only appear once in a file; put all of its operations in the
+one entry.
+
 ## Running one
 
 ```
 > wrsrcli import mylist.yaml
+
+=== item 3780739284 (1 of 2) ===
 
 Copied 14 file(s); removed 1 target(s).
 Backed up 3 original(s) to C:\Users\you\AppData\Roaming\wrsrcli\backups\3780739284\20260920-003300
@@ -164,14 +233,20 @@ been imported. `wrsrcli` keeps its own verbatim copy of each list when you
 run it, so this works even if you have since moved, edited or deleted the
 file you originally pointed at.
 
+For a file describing several items, each origin is replayed on its own —
+the file is not re-applied whole once per item it contains.
+
 A rerun goes through exactly the same path as a fresh `import` — same
 conflict prompts, same backup-before-write — so re-applying is as
 reversible as applying was.
 
 ## Writing a list for others
 
-- Give `item` the ID of the asset the list belongs to, so `rollback` and
-  `manual-rerun` can find it.
+- Start the file with `version: 1`.
+- Give each `item` the ID of the asset that entry belongs to, so `rollback`
+  and `manual-rerun` can find it.
+- Say what an optional dependency is *for* in its `message`. Your users are
+  deciding on that sentence alone.
 - Prefer naming files explicitly over `*`. It documents what the asset
   actually needs and avoids conflict prompts your users then have to answer.
 - Quote every `dst` and `remove` entry.
