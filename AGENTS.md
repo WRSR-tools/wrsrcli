@@ -99,7 +99,7 @@ so rather than quietly bringing one into line with the other.
 
 - Command-line interface: one subcommand per verb (`scan`, `output-table`,
   `update`, `import`, `restore`, `rollback`, `manual-rerun`, `manual-check`,
-  `path`, `install`, `uninstall`, `open-web`), matching the
+  `path`, `install`, `uninstall`, `open-web`, `completion`), matching the
   definitions in `SPEC.md`. Adding a verb means updating this list and
   `SPEC.md` in the same change — `install` and `uninstall` were both
   implemented before either was recorded (see D-015).

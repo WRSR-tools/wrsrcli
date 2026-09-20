@@ -198,8 +198,16 @@ See decision D-015, which supersedes D-014's exclusion of an uninstall path.
 
 ## 4. Commands
 
-`wrsrcli --help`, and `wrsrcli` with no arguments (D-017), list the
-commands below. Section headings, command names, option strings and the
+`wrsrcli --help`, and `wrsrcli` with no arguments (D-017), print an
+80-column banner rather than argparse's usage line: a rule, the name with
+`vX.Y.Z - YYYY-MM-DD` right-aligned, the website, a rule, the description,
+the command list, the options, and a footer pointing at `-h` (decision
+D-025). The date comes from `__released__`, bumped with `__version__` at
+release. Each command additionally carries a paragraph of its own, and an
+example where it takes arguments, shown by `wrsrcli {command} -h`; those
+screens keep argparse's usage line, which is where the arguments are.
+
+The commands are: Section headings, command names, option strings and the
 `usage:` prefix are shown in the rusty red of D-016; descriptions keep the
 terminal's own foreground. The same colour rules as the first-run screen
 apply — the accent appears only where the console has been confirmed to
@@ -564,6 +572,26 @@ is overwritten. Afterwards the user is told to re-run `scan`.
 
 Requires the Steam client running, with the signed-in account owning the
 game. See decision D-024.
+
+### 4.9 `wrsrcli completion`
+
+Prints a PowerShell `Register-ArgumentCompleter` script completing wrsrcli's
+commands and options.
+
+- `-i` / `--install` writes it into the user's PowerShell profile, after
+  printing the path and waiting for ENTER. Any previously installed copy is
+  replaced rather than appended to, so an upgrade does not leave two
+  completers registered for the same command.
+- The profile is found without running PowerShell: `Documents/PowerShell/`
+  is preferred over `Documents/WindowsPowerShell/` where both exist, and the
+  latter is created when neither does.
+- Command and option names are baked in when the script is generated, not
+  looked up per keystroke — Tab must feel instant, and a one-file frozen
+  executable unpacks itself on every run. The script therefore needs
+  regenerating after an upgrade, which its own header states.
+- **Known gap:** PowerShell does not invoke a native command's completer for
+  a bare `-` or `--`, so Tab offers nothing there. One further character
+  completes normally. See decision D-025.
 
 ## 5. Backup manifest
 

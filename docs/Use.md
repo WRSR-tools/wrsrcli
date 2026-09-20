@@ -195,6 +195,30 @@ These five commands are covered in full in [Import.md](Import.md).
 | `wrsrcli open-web` | Open the project website in your default browser |
 | `wrsrcli --version` | Print the version |
 
+### `wrsrcli completion`
+
+Turns on Tab completion in PowerShell, so `wrsrcli out<Tab>` becomes
+`wrsrcli output-table`.
+
+```
+wrsrcli completion --install
+```
+
+It shows you which profile file it will write to and waits for ENTER.
+Afterwards, open a new PowerShell window — or run `. $PROFILE` in the
+current one — and Tab will complete command names and option names.
+
+Without `--install` it prints the script instead, so you can read it or add
+it to your profile yourself.
+
+Run it again after upgrading wrsrcli: the script lists the commands as they
+were when it was generated, so a new command will not complete until you do.
+
+> PowerShell will not offer anything if you press Tab straight after a bare
+> `-` or `--`. Type one more character — `--p<Tab>` — and it completes. That
+> is PowerShell's own behaviour with native commands, not something wrsrcli
+> can change.
+
 ### `wrsrcli open-web`
 
 Opens <https://wrsr-tools.github.io/> in whichever browser Windows is set to
