@@ -29,6 +29,7 @@ wrsrcli scan                   build the asset manifest
 wrsrcli output-table           write a searchable WRSR Assets.html
 wrsrcli update                 subscribe to missing deps and updates
 wrsrcli import mylist.yaml     apply an import list, with backups
+wrsrcli upgrade                download and install the latest release
 ```
 
 Every command is documented in [docs/Use.md](docs/Use.md), and the

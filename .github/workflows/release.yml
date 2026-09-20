@@ -53,3 +53,50 @@ jobs:
         uses: softprops/action-gh-release@v3.0.0
         with:
           files: dist/wrsrcli-windows-amd64.exe
+
+      # `wrsrcli --version` fetches versions/v{its own version}.txt and prints
+      # the line it finds, so this is what tells an installed build that it has
+      # fallen behind. Runs after the release is attached: the note tells users
+      # to upgrade, and the thing to upgrade to must exist first.
+      - name: Record this release in versions/
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+          $date = [datetime]::UtcNow.ToString('d MMMM yyyy', [cultureinfo]::InvariantCulture)
+
+          # The tag is a detached HEAD; these files belong on main.
+          git fetch origin main
+          git checkout -B main origin/main
+
+          New-Item -ItemType Directory -Force versions | Out-Null
+
+          # The new file first, so there is never a moment where every file
+          # says "outdated" and none says which version to get.
+          $new = "versions/$tag.txt"
+          "$tag - released on $date. This is the latest version." |
+            Set-Content -Path $new -Encoding utf8NoBOM
+
+          # Then every other one, keeping its own version and release date.
+          Get-ChildItem versions/*.txt |
+            Where-Object { $_.Name -ne "$tag.txt" } |
+            ForEach-Object {
+              $line = Get-Content $_.FullName -TotalCount 1
+              if ($line -match '^(?<v>v\S+) - released on (?<d>.+?)\.') {
+                "$($Matches.v) - released on $($Matches.d). This file is outdated. Please run wrsrcli upgrade to download the latest version." |
+                  Set-Content -Path $_.FullName -Encoding utf8NoBOM
+              } else {
+                Write-Warning "versions/$($_.Name) is not in the expected format; left alone."
+              }
+            }
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add versions
+          git diff --cached --quiet
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "versions/ already up to date."
+          } else {
+            git commit -m "Record $tag in versions/"
+            git push origin main
+          }

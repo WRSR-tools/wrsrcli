@@ -11,7 +11,7 @@ from pathlib import Path
 
 from . import __version__, acf, backup, config, history
 from . import importer, importlist, install, scan, staleness, steam
-from . import steamworks, table, updates
+from . import release, steamworks, table, updates
 from .errors import WrsrcliError
 
 # Verbatim per SPEC.md 4.2 — do not reword.
@@ -707,6 +707,97 @@ def cmd_uninstall(args):
         f"{config.config_dir()} were left untouched."
     )
     return 0
+
+
+UPGRADE_PROMPT = "Press ENTER to download and install it, or anything else to cancel: "
+
+
+def cmd_upgrade(args):
+    """Replace this executable with the newest release (SPEC.md 4.10, D-026)."""
+    if not install.is_frozen():
+        raise WrsrcliError(
+            "`upgrade` only applies to the standalone executable. You are "
+            "running from source or a pip install — use `pip install -U wrsrcli`."
+        )
+
+    tag, url = release.latest_release()
+    if release.normalise(tag) == release.normalise(__version__):
+        print(f"wrsrcli {__version__} is already the latest release.")
+        return 0
+
+    running = Path(install.running_executable())
+    print(f"Installed: wrsrcli {__version__}")
+    print(f"Latest:    wrsrcli {release.normalise(tag)}")
+    print()
+    print(f"This will replace {running}")
+    if input(UPGRADE_PROMPT).strip():
+        print("Cancelled. Nothing was downloaded.")
+        return 0
+
+    staged = running.with_name(running.name + ".new")
+    print(f"\nDownloading {release.ASSET_NAME} ...")
+    written = release.download(url, staged)
+    print(f"Downloaded {written:,} bytes")
+
+    _replace_running(running, staged)
+    print(f"Upgraded to wrsrcli {release.normalise(tag)}.")
+    print("Run `wrsrcli --version` to confirm.")
+    return 0
+
+
+def _replace_running(running, staged):
+    """Swap `staged` into `running`'s place, from inside `running`.
+
+    Windows will not let a running executable be deleted or overwritten, but
+    it will let one be *renamed*. So the live file is moved aside and the new
+    one takes its name; the leftover is removed on the next run, since it
+    cannot be deleted while this process holds it open.
+    """
+    retired = running.with_name(running.name + ".old")
+    try:
+        if retired.exists():
+            retired.unlink()
+    except OSError:
+        # A previous upgrade's leftover, still held by something. Harmless:
+        # a unique name is used instead.
+        retired = running.with_name(running.name + f".old-{os.getpid()}")
+
+    try:
+        running.rename(retired)
+    except OSError as exc:
+        staged.unlink(missing_ok=True)
+        raise WrsrcliError(
+            f"could not move {running} aside: {exc}. Nothing has been changed."
+        ) from exc
+
+    try:
+        staged.rename(running)
+    except OSError as exc:
+        # Put the original back rather than leaving no wrsrcli at all.
+        retired.rename(running)
+        staged.unlink(missing_ok=True)
+        raise WrsrcliError(
+            f"could not put the new executable in place: {exc}. "
+            "The previous version has been restored."
+        ) from exc
+
+    print(f"Replaced {running}")
+    print(f"The previous version is at {retired.name} and can be deleted.")
+
+
+def _sweep_old_executable():
+    """Delete the leftover from a previous `upgrade`, if it is finally free."""
+    if not install.is_frozen():
+        return
+    try:
+        running = Path(install.running_executable())
+        for leftover in running.parent.glob(running.name + ".old*"):
+            try:
+                leftover.unlink()
+            except OSError:
+                pass
+    except OSError:
+        pass
 
 
 COMPLETION_MARKER = "# wrsrcli Tab completion for PowerShell"
